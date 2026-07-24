@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Local run artefacts
+*.log
+.differential-deep.log
+coverage/
+.tmpcheck/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets — nothing here yet, but the rule should exist before it is needed
+.env
+.env.*
+!.env.example

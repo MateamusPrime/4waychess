@@ -1,0 +1,17 @@
+{
+  "name": "4waychess",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "test:engine": "npm run test -w @4wc/engine",
+    "perft": "npm run perft -w @4wc/engine"
+  }
+}

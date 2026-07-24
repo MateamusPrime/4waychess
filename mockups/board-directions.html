@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>4-Way Chess — Art Direction Study</title>
+<style>
+/* ============================================================
+   4-WAY CHESS · ART DIRECTION STUDY
+   Same verified opening position, three visual directions.
+   Board: 14x14 with 3x3 corners removed = 160 playable squares.
+   Files a-n (left to right), ranks 1-14 (bottom to top).
+   ============================================================ */
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font-ui);
+  background:var(--bg);
+  color:var(--fg);
+  min-height:100vh;
+  transition:background .45s ease,color .45s ease;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- THEME: MIDNIGHT (modern dark / premium digital) ---------- */
+[data-theme="midnight"]{
+  --font-ui:'Inter','Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;
+  --font-display:'Inter','Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;
+  --bg:radial-gradient(1200px 800px at 50% -10%,#16202e 0%,#0a0e14 55%,#06080c 100%);
+  --fg:#e6edf5;
+  --muted:#7d8b9e;
+  --panel:rgba(255,255,255,.035);
+  --panel-brd:rgba(255,255,255,.08);
+  --panel-radius:14px;
+  --sq-light:#26313f;
+  --sq-dark:#1a2330;
+  --board-frame:rgba(255,255,255,.07);
+  --board-shadow:0 40px 90px -30px rgba(0,0,0,.9),0 0 0 1px rgba(255,255,255,.06);
+  --board-gap:0px;
+  --sq-radius:0px;
+  --coord:rgba(255,255,255,.28);
+  --red:#ff4d5e; --blue:#3d9bff; --yellow:#ffc93d; --green:#34d399;
+  --piece-stroke:1.1px; --piece-stroke-col:rgba(4,8,14,.75);
+  --piece-shadow:drop-shadow(0 2px 3px rgba(0,0,0,.65));
+  --piece-glow:.55;
+  --sel:rgba(255,201,61,.22);
+  --dot:rgba(255,255,255,.30);
+  --last:rgba(255,201,61,.16);
+  --accent:#ffc93d;
+}
+/* ---------- THEME: ATELIER (physical premium / wood & brass) ---------- */
+[data-theme="atelier"]{
+  --font-ui:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+  --font-display:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+  --bg:radial-gradient(1000px 700px at 50% 0%,#3b3027 0%,#241c16 60%,#171210 100%);
+  --fg:#f2e6d2;
+  --muted:#a08e75;
+  --panel:rgba(255,246,230,.045);
+  --panel-brd:rgba(214,182,133,.20);
+  --panel-radius:6px;
+  --sq-light:#e5cfa6;
+  --sq-dark:#a97a4e;
+  --board-frame:#5a3f27;
+  --board-shadow:0 44px 80px -28px rgba(0,0,0,.85),0 0 0 14px #5a3f27,0 0 0 15px #7c5a38,0 0 0 20px rgba(0,0,0,.35);
+  --board-gap:0px;
+  --sq-radius:0px;
+  --coord:rgba(60,38,20,.5);
+  --red:#b23a30; --blue:#2f5d86; --yellow:#c2912b; --green:#4c7a4a;
+  --piece-stroke:.7px; --piece-stroke-col:rgba(30,16,6,.55);
+  --piece-shadow:drop-shadow(0 3px 2px rgba(48,28,10,.5));
+  --piece-glow:0;
+  --sel:rgba(178,58,48,.20);
+  --dot:rgba(52,30,12,.42);
+  --last:rgba(194,145,43,.26);
+  --accent:#d9ab54;
+}
+/* ---------- THEME: STORYBOOK (illustrated / characterful) ---------- */
+[data-theme="storybook"]{
+  --font-ui:'Nunito','Segoe UI Rounded','Trebuchet MS',system-ui,sans-serif;
+  --font-display:'Nunito','Segoe UI Rounded','Trebuchet MS',system-ui,sans-serif;
+  --bg:linear-gradient(170deg,#fff6e8 0%,#ffeede 40%,#ffe4e0 100%);
+  --fg:#3a3350;
+  --muted:#8b83a6;
+  --panel:rgba(255,255,255,.72);
+  --panel-brd:rgba(58,51,80,.14);
+  --panel-radius:18px;
+  --sq-light:#fffaf0;
+  --sq-dark:#f6ddc0;
+  --board-frame:#d3cfd9;
+  --board-shadow:0 26px 0 -12px rgba(58,51,80,.10),0 40px 70px -30px rgba(58,51,80,.35);
+  --board-gap:1.5px;
+  --sq-radius:5px;
+  --coord:rgba(58,51,80,.42);
+  --red:#f4635e; --blue:#5c8dee; --yellow:#f6c445; --green:#4cc481;
+  --piece-stroke:2.4px; --piece-stroke-col:#3a3350;
+  --piece-shadow:drop-shadow(0 3px 0 rgba(58,51,80,.22));
+  --piece-glow:0;
+  --sel:rgba(246,196,69,.40);
+  --dot:rgba(58,51,80,.30);
+  --last:rgba(92,141,238,.22);
+  --accent:#f4635e;
+}
+
+/* ---------------- shell ---------------- */
+.wrap{max-width:1380px;margin:0 auto;padding:26px 24px 60px}
+header.top{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between;margin-bottom:22px}
+.brand h1{font-family:var(--font-display);font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
+.brand p{margin:0;color:var(--muted);font-size:13px;max-width:56ch;line-height:1.5}
+.brand .kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 6px;font-weight:700}
+
+.switch{display:flex;gap:8px;flex-wrap:wrap}
+.switch button{
+  font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;
+  padding:9px 16px;border-radius:calc(var(--panel-radius) - 4px);
+  background:var(--panel);color:var(--fg);border:1px solid var(--panel-brd);
+  transition:all .2s ease;
+}
+.switch button:hover{border-color:var(--accent);transform:translateY(-1px)}
+.switch button[aria-pressed="true"]{background:var(--accent);color:#12161d;border-color:var(--accent);font-weight:800}
+[data-theme="storybook"] .switch button[aria-pressed="true"]{color:#fff}
+
+.toggles{display:flex;gap:16px;align-items:center;font-size:12px;color:var(--muted);margin-top:10px}
+.toggles label{display:flex;gap:6px;align-items:center;cursor:pointer;user-select:none}
+.seatpick{display:flex;gap:5px;align-items:center}
+button.seat{font-family:var(--font-ui);font-size:11px;font-weight:700;cursor:pointer;padding:4px 9px;
+  border-radius:99px;background:transparent;color:var(--muted);border:1px solid var(--panel-brd);transition:all .2s}
+button.seat:hover{color:var(--fg);border-color:var(--s)}
+button.seat.on{background:var(--s);border-color:var(--s);color:#0d1117}
+[data-theme="storybook"] button.seat.on{color:#fff}
+
+/* ---------------- layout ---------------- */
+.stage{display:grid;grid-template-columns:236px minmax(0,1fr) 246px;gap:22px;align-items:start}
+@media (max-width:1120px){.stage{grid-template-columns:1fr}}
+
+/* ---------------- board ---------------- */
+.board-hold{display:flex;justify-content:center}
+.board{
+  --size:min(70vh,660px);
+  width:var(--size);height:var(--size);
+  display:grid;
+  grid-template-columns:repeat(14,1fr);
+  grid-template-rows:repeat(14,1fr);
+  gap:var(--board-gap);
+  font-size:calc(var(--size)/14);
+  box-shadow:var(--board-shadow);
+  background:var(--board-frame);
+  transition:box-shadow .45s ease,background .45s ease;
+}
+/* Storybook: light grey grid lines showing through the square gaps */
+[data-theme="storybook"] .board{padding:1.5px;border-radius:12px;background:#d3cfd9;
+  box-shadow:var(--board-shadow),0 0 0 5px #fffaf0,0 0 0 6px #d3cfd9}
+
+.sq{position:relative;border-radius:var(--sq-radius);transition:background .45s ease,border-radius .45s ease}
+.sq.void{background:transparent!important;box-shadow:none}
+.sq.light{background:var(--sq-light)}
+.sq.dark{background:var(--sq-dark)}
+[data-theme="atelier"] .sq.light{background:
+  repeating-linear-gradient(94deg,rgba(140,100,55,.09) 0 2px,transparent 2px 7px),var(--sq-light)}
+[data-theme="atelier"] .sq.dark{background:
+  repeating-linear-gradient(86deg,rgba(60,32,10,.13) 0 2px,transparent 2px 6px),var(--sq-dark)}
+
+.sq.last::after{content:"";position:absolute;inset:0;background:var(--last);border-radius:inherit}
+.sq.sel::after{content:"";position:absolute;inset:0;background:var(--sel);border-radius:inherit;
+  box-shadow:inset 0 0 0 2px var(--accent)}
+.sq .dot{position:absolute;left:50%;top:50%;width:26%;height:26%;transform:translate(-50%,-50%);
+  border-radius:50%;background:var(--dot);pointer-events:none}
+.sq .ring{position:absolute;inset:6%;border-radius:50%;border:.14em solid var(--dot);pointer-events:none}
+
+.coord{position:absolute;font-size:.24em;font-weight:700;color:var(--coord);line-height:1;pointer-events:none}
+.coord.f{right:.18em;bottom:.12em}
+.coord.r{left:.18em;top:.12em}
+body:not(.show-coords) .coord{display:none}
+
+/* pawn direction overlay */
+.vec{position:absolute;left:50%;top:50%;width:60%;height:60%;transform:translate(-50%,-50%);
+  pointer-events:none;opacity:.85}
+body:not(.show-vectors) .vec{display:none}
+body.show-vectors .piece.pawn{opacity:.28}
+
+/* ---------------- pieces ---------------- */
+.piece{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:.78em;line-height:1;user-select:none;
+  -webkit-text-stroke:var(--piece-stroke) var(--piece-stroke-col);
+  paint-order:stroke fill;
+  filter:var(--piece-shadow);
+  transition:filter .45s ease,-webkit-text-stroke .45s ease,color .45s ease;
+}
+.p-red{color:var(--red)} .p-blue{color:var(--blue)}
+.p-yellow{color:var(--yellow)} .p-green{color:var(--green)}
+[data-theme="midnight"] .p-red{filter:var(--piece-shadow) drop-shadow(0 0 7px rgba(255,77,94,var(--piece-glow)))}
+[data-theme="midnight"] .p-blue{filter:var(--piece-shadow) drop-shadow(0 0 7px rgba(61,155,255,var(--piece-glow)))}
+[data-theme="midnight"] .p-yellow{filter:var(--piece-shadow) drop-shadow(0 0 7px rgba(255,201,61,var(--piece-glow)))}
+[data-theme="midnight"] .p-green{filter:var(--piece-shadow) drop-shadow(0 0 7px rgba(52,211,153,var(--piece-glow)))}
+
+/* ---------------- panels ---------------- */
+.panel{background:var(--panel);border:1px solid var(--panel-brd);border-radius:var(--panel-radius);
+  padding:14px;margin-bottom:14px;transition:all .45s ease}
+[data-theme="storybook"] .panel{box-shadow:0 6px 0 -2px rgba(58,51,80,.08)}
+.panel h3{margin:0 0 10px;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);font-weight:800}
+
+.pcard{display:flex;gap:11px;align-items:center;padding:10px 11px;border-radius:calc(var(--panel-radius) - 4px);
+  border:1px solid transparent;margin-bottom:8px;background:var(--panel);transition:all .3s ease}
+.pcard:last-child{margin-bottom:0}
+.pcard .chip{width:12px;height:12px;border-radius:4px;flex:none;box-shadow:0 0 0 3px rgba(255,255,255,.06)}
+.pcard .who{flex:1;min-width:0}
+.pcard .nm{font-size:13px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .sub{font-size:11px;color:var(--muted);margin-top:2px;display:flex;gap:6px;align-items:center}
+.pcard .clock{font-variant-numeric:tabular-nums;font-size:13px;font-weight:700;letter-spacing:.02em}
+.pcard .pts{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;min-width:26px;text-align:right}
+.pcard.turn{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.pcard.turn .clock{color:var(--accent)}
+.pcard.dead{opacity:.42}
+.badge{font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;padding:2px 6px;border-radius:99px;
+  background:color-mix(in srgb,var(--red) 22%,transparent);color:var(--red)}
+
+.moves{font-family:'SF Mono',ui-monospace,Consolas,monospace;font-size:12px;line-height:1.75}
+.moves .row{display:grid;grid-template-columns:22px 1fr 1fr;gap:4px;padding:3px 4px;border-radius:5px}
+.moves .row:nth-child(odd){background:rgba(128,128,128,.07)}
+.moves .n{color:var(--muted)}
+.moves .cell{display:flex;gap:5px;align-items:center}
+.moves .cell i{width:7px;height:7px;border-radius:2px;flex:none;font-style:normal}
+.moves .live{outline:1.5px dashed var(--accent);outline-offset:1px}
+
+.legend{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:12px}
+.legend .k{color:var(--muted)}
+.legend .v{font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
+.legend hr{grid-column:1/-1;border:0;border-top:1px solid var(--panel-brd);margin:6px 0}
+
+.notes{margin-top:26px;padding:18px 20px;background:var(--panel);border:1px solid var(--panel-brd);
+  border-radius:var(--panel-radius);font-size:13px;line-height:1.65;color:var(--muted)}
+.notes b{color:var(--fg)}
+.notes ul{margin:8px 0 0;padding-left:18px}
+.notes li{margin-bottom:5px}
+.tname{font-family:var(--font-display);font-size:17px;color:var(--fg);margin:0 0 2px;font-weight:700}
+</style>
+</head>
+<body data-theme="midnight" class="show-coords">
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <p class="kicker">Art Direction Study · 01</p>
+      <h1 id="tTitle">Midnight</h1>
+      <p id="tDesc">Deep charcoal, subtle depth, saturated army accents that glow on check and capture. Reads as expensive on screens and animates beautifully.</p>
+      <div class="toggles">
+        <label><input type="checkbox" id="cCoords" checked> Coordinates</label>
+        <label><input type="checkbox" id="cVectors"> Pawn directions</label>
+        <span class="seatpick">View as
+          <button data-seat="red"    class="seat on" style="--s:var(--red)">Red</button>
+          <button data-seat="blue"   class="seat"    style="--s:var(--blue)">Blue</button>
+          <button data-seat="yellow" class="seat"    style="--s:var(--yellow)">Yellow</button>
+          <button data-seat="green"  class="seat"    style="--s:var(--green)">Green</button>
+        </span>
+      </div>
+    </div>
+    <div>
+      <div class="switch">
+        <button data-t="midnight" aria-pressed="true">Midnight</button>
+        <button data-t="atelier" aria-pressed="false">Atelier</button>
+        <button data-t="storybook" aria-pressed="false">Storybook</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="stage">
+    <!-- LEFT -->
+    <div>
+      <div class="panel">
+        <h3>Free-for-All · Move 3</h3>
+        <div id="cards"></div>
+      </div>
+      <div class="panel">
+        <h3>FFA Scoring</h3>
+        <div class="legend">
+          <span class="k">Pawn / 1-pt queen</span><span class="v">+1</span>
+          <span class="k">Knight</span><span class="v">+3</span>
+          <span class="k">Bishop</span><span class="v">+5</span>
+          <span class="k">Rook</span><span class="v">+5</span>
+          <span class="k">Queen</span><span class="v">+9</span>
+          <hr>
+          <span class="k">Checkmate</span><span class="v">+20</span>
+          <span class="k">Self-stalemate</span><span class="v">+20</span>
+          <span class="k">Check two players</span><span class="v">+5</span>
+          <span class="k">Check three players</span><span class="v">+20</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOARD -->
+    <div class="board-hold"><div class="board" id="board"></div></div>
+
+    <!-- RIGHT -->
+    <div>
+      <div class="panel">
+        <h3>Moves</h3>
+        <div class="moves" id="moves"></div>
+      </div>
+      <div class="panel">
+        <h3>Position</h3>
+        <div class="legend">
+          <span class="k">Board</span><span class="v">14 × 14</span>
+          <span class="k">Playable squares</span><span class="v">160</span>
+          <span class="k">Corners removed</span><span class="v">4 × 3×3</span>
+          <span class="k">Pieces on board</span><span class="v">64</span>
+          <hr>
+          <span class="k">Turn order</span><span class="v">R → B → Y → G</span>
+          <span class="k">FFA promotion</span><span class="v">8th rank</span>
+          <span class="k">Teams promotion</span><span class="v">11th rank</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <p class="tname">What you're looking at</p>
+    Our house starting position, parsed verbatim from a FEN4 string. Every army reads
+    <b>R N B Q K B N R from its own left</b> — <b>queen left, king right for all four</b>, as in standard chess. That makes
+    the setup <b>90° rotationally symmetric</b>: every seat is identical under rotation, which is what makes the
+    "always render me at the bottom" rule feel natural from any chair. Kings sit at Red <b>h1</b>, Blue <b>a7</b>,
+    Yellow <b>g14</b>, Green <b>n8</b> — still offset by one, so no two kings face each other.
+    Use <b>View as</b> to rotate the board between seats, and toggle <b>Pawn directions</b> to see the four
+    perpendicular pawn walls that make this a genuinely different game.
+    <ul>
+      <li><b>All three themes ship</b> as a user setting, persisted (localStorage here, a user-settings row later).
+      Midnight is the default for new players and for anyone with no stored preference.</li>
+      <li><b>Pieces are placeholder Unicode glyphs.</b> The shipped set will be a custom SVG piece family drawn for each
+      direction — that alone is a large share of the "million bucks" feel, and it triples with three themes.</li>
+      <li><b>This diverges from chess.com by two FEN4 rows</b> (Blue and Green swap king and queen). The file keeps
+      <code>CHESSCOM_START</code> alongside <code>OUR_START</code> so an import shim stays cheap.</li>
+      <li><b>Colour accessibility is unsolved here.</b> Red/green is the most common deficiency and this palette leans on it.
+      Whichever direction wins needs a second pass: either shape/pattern differentiation on top of the canonical colours,
+      or a colourblind-safe alternate palette as a user setting.</li>
+      <li>Motion, sound, and the elimination sequence aren't represented — they're where a lot of the polish actually lives.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Geometry: x = 0..13 (files a..n), y = 0..13 (ranks 1..14, y=0 = rank 1 = bottom)
+   A square is playable unless it falls in a 3x3 corner block.
+   ============================================================ */
+const FILES = "abcdefghijklmn";
+const onBoard = (x,y) => !((x<3||x>10) && (y<3||y>10));
+const sqName  = (x,y) => FILES[x] + (y+1);
+
+/* ---- Starting positions as FEN4 board fields, rank 14 -> rank 1 ----
+   Parsed verbatim rather than generated from a rule, so they cannot drift.
+
+   CHESSCOM_START is the authoritative real-world position. It is MIRROR-symmetric:
+     Red & Yellow -> R N B Q K B N R from own left (queen left)
+     Blue & Green -> R N B K Q B N R from own left (king left)
+
+   OUR_START is our house rule: QUEEN LEFT FOR ALL FOUR ARMIES. That makes the
+   setup 90-degree ROTATIONALLY symmetric — every seat is identical under rotation.
+   It differs from chess.com by exactly two rows (ranks 8 and 7 swap Blue/Green K and Q),
+   so an import shim is cheap if we ever want chess.com FEN4 compatibility. */
+
+const CHESSCOM_START =
+  "3,yR,yN,yB,yK,yQ,yB,yN,yR,3/3,yP,yP,yP,yP,yP,yP,yP,yP,3/14/" +
+  "bR,bP,10,gP,gR/bN,bP,10,gP,gN/bB,bP,10,gP,gB/bK,bP,10,gP,gQ/" +
+  "bQ,bP,10,gP,gK/bB,bP,10,gP,gB/bN,bP,10,gP,gN/bR,bP,10,gP,gR/" +
+  "14/3,rP,rP,rP,rP,rP,rP,rP,rP,3/3,rR,rN,rB,rQ,rK,rB,rN,rR,3";
+
+const OUR_START =
+  "3,yR,yN,yB,yK,yQ,yB,yN,yR,3/3,yP,yP,yP,yP,yP,yP,yP,yP,3/14/" +
+  "bR,bP,10,gP,gR/bN,bP,10,gP,gN/bB,bP,10,gP,gB/bQ,bP,10,gP,gK/" +   /* rank 8 */
+  "bK,bP,10,gP,gQ/bB,bP,10,gP,gB/bN,bP,10,gP,gN/bR,bP,10,gP,gR/" +   /* rank 7 */
+  "14/3,rP,rP,rP,rP,rP,rP,rP,rP,3/3,rR,rN,rB,rQ,rK,rB,rN,rR,3";
+
+const COLOUR = {r:"red", b:"blue", y:"yellow", g:"green"};
+function parseFen4(fen){
+  const out = {};
+  fen.split("/").forEach((row,i)=>{
+    const y = 13 - i;                     // row 0 = rank 14 (top)
+    let x = 0;
+    row.split(",").forEach(tok=>{
+      if(/^\d+$/.test(tok)){ x += +tok; return; }
+      out[x+","+y] = {c:COLOUR[tok[0]], t:tok[1].toLowerCase()};
+      x++;
+    });
+  });
+  return out;
+}
+const pos = parseFen4(OUR_START);
+
+/* Three developing knight moves already played (all verified legal) */
+const played = [
+  ["9,0","8,2"],    // Red   Nj1-i3
+  ["0,4","2,5"],    // Blue  Na5-c6
+  ["4,13","5,11"],  // Yellow Ne14-f12
+  ["13,9","11,8"]   // Green Nn10-l9
+];
+played.forEach(([from,to])=>{ pos[to]=pos[from]; delete pos[from]; });
+
+/* Red to move, g1 knight... use Red's f1 bishop opening line for the selection demo.
+   Selected: Red knight e1 (x=4,y=0). Legal: d3 (3,2) and f3 (5,2) — g2/c2 blocked or off-board. */
+const SELECTED = "4,0";
+const TARGETS  = ["3,2","5,2"];
+const LAST     = ["13,9","11,8"];
+
+const GLYPH = {k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+/* Board-space forward direction of each army's pawns (x = file, y = rank). */
+const FWD = {red:[0,1], blue:[1,0], yellow:[0,-1], green:[-1,0]};
+
+/* View transforms — screenCol = a·x + b·y + c ; screenRow = d·x + e·y + f
+   Each seats that army at the bottom of the screen with its own left on the left.
+   All four have determinant −1, i.e. they are pure rotations of the default view:
+   the board is never mirrored, so piece handedness is preserved for every seat. */
+const VIEW = {
+  red:    {a: 1, b: 0, c: 0,  d: 0, e:-1, f:13},
+  blue:   {a: 0, b:-1, c:13,  d:-1, e: 0, f:13},
+  yellow: {a:-1, b: 0, c:13,  d: 0, e: 1, f: 0},
+  green:  {a: 0, b: 1, c: 0,  d: 1, e: 0, f: 0}
+};
+
+const board = document.getElementById("board");
+
+function render(seat){
+  const v = VIEW[seat];
+  const col = (x,y)=> v.a*x + v.b*y + v.c;
+  const row = (x,y)=> v.d*x + v.e*y + v.f;
+
+  /* Project every playable square into a screen grid. */
+  const grid = Array.from({length:14},()=>Array(14).fill(null));
+  for(let x=0;x<14;x++) for(let y=0;y<14;y++)
+    if(onBoard(x,y)) grid[row(x,y)][col(x,y)] = {x,y};
+
+  /* Coordinate labels follow the visible bottom / left edge, whatever the rotation. */
+  const fileAt = new Set(), rankAt = new Set();
+  for(let c=0;c<14;c++) for(let r=13;r>=0;r--) if(grid[r][c]){ fileAt.add(r+","+c); break; }
+  for(let r=0;r<14;r++) for(let c=0;c<14;c++) if(grid[r][c]){ rankAt.add(r+","+c); break; }
+
+  let html = "";
+  for(let r=0;r<14;r++) for(let c=0;c<14;c++){
+    const cell = grid[r][c];
+    if(!cell){ html += '<div class="sq void"></div>'; continue; }
+    const {x,y} = cell, key = x+","+y;
+    const cls = ["sq", (x+y)%2 ? "light" : "dark"];
+    if(LAST.includes(key)) cls.push("last");
+    if(key === SELECTED)   cls.push("sel");
+
+    let inner = "";
+    if(fileAt.has(r+","+c)) inner += `<span class="coord f">${FILES[x]}</span>`;
+    if(rankAt.has(r+","+c)) inner += `<span class="coord r">${y+1}</span>`;
+
+    const pc = pos[key];
+    if(pc){
+      inner += `<span class="piece p-${pc.c}${pc.t==="p"?" pawn":""}">${GLYPH[pc.t]}</span>`;
+      if(pc.t==="p"){
+        const [fx,fy] = FWD[pc.c];
+        const dc = v.a*fx + v.b*fy, dr = v.d*fx + v.e*fy;   // rotate direction into screen space
+        const x1=50-dc*22, y1=50-dr*22, x2=50+dc*26, y2=50+dr*26, id = `m${x}_${y}`;
+        inner += `<svg class="vec" viewBox="0 0 100 100"><defs><marker id="${id}" markerWidth="4" markerHeight="4"
+          refX="2.4" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 z" fill="var(--${pc.c})"/></marker></defs>
+          <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--${pc.c})" stroke-width="9"
+          stroke-linecap="round" marker-end="url(#${id})"/></svg>`;
+      }
+    }
+    if(TARGETS.includes(key)) inner += pc ? '<span class="ring"></span>' : '<span class="dot"></span>';
+    html += `<div class="${cls.join(" ")}" title="${sqName(x,y)}">${inner}</div>`;
+  }
+  board.innerHTML = html;
+}
+
+/* ---- player cards ---- */
+const PLAYERS = [
+  {c:"red",    n:"You",         r:1642, t:"4:58", p:0, turn:true},
+  {c:"blue",   n:"Nightjar",    r:1588, t:"5:00", p:0},
+  {c:"yellow", n:"kasparov_jr", r:1701, t:"5:00", p:0},
+  {c:"green",  n:"Bot · Reaper",r:1550, t:"5:00", p:0}
+];
+document.getElementById("cards").innerHTML = PLAYERS.map(p=>`
+  <div class="pcard${p.turn?" turn":""}">
+    <span class="chip" style="background:var(--${p.c})"></span>
+    <span class="who">
+      <span class="nm">${p.n}</span>
+      <span class="sub">${p.r}${p.turn?' · <span class="badge">to move</span>':""}</span>
+    </span>
+    <span class="clock">${p.t}</span>
+    <span class="pts">${p.p}</span>
+  </div>`).join("");
+
+/* ---- move list ---- */
+const MOVES = [
+  ["g2-g4","b7-d7","h13-h11","m8-k8"],
+  ["Nj1-i3","Na5-c6","Ne14-f12","Nn10-l9"],
+  ["…","","",""]
+];
+document.getElementById("moves").innerHTML = MOVES.map((mv,i)=>{
+  const cell = (c,m,live)=> m ? `<span class="cell${live?" live":""}"><i style="background:var(--${c})"></i>${m}</span>` : "<span></span>";
+  return `<div class="row"><span class="n">${i+1}.</span>${cell("red",mv[0],i===2)}${cell("blue",mv[1])}</div>
+          <div class="row"><span class="n"></span>${cell("yellow",mv[2])}${cell("green",mv[3])}</div>`;
+}).join("");
+
+/* ---- theme: user-selectable, persisted, Midnight for anyone with no preference ---- */
+const THEMES  = ["midnight","atelier","storybook"];
+const DEFAULT_THEME = "midnight";
+const STORE_KEY = "4wc.theme";
+const COPY = {
+  midnight:["Midnight","Deep charcoal, subtle depth, saturated army accents that glow on check and capture. Reads as expensive on screens and animates beautifully."],
+  atelier:["Atelier","Tournament-table realism — wood grain, brass frame, felted pieces, soft real shadows. Timeless and high-end, but four bright armies must live on a warm palette."],
+  storybook:["Storybook","Rounded, illustrated, thick-outlined and friendly, on a light grey grid. Most memorable and most shareable — and the most dependent on a custom-drawn piece set."]
+};
+
+/* localStorage stands in for the user-settings row we'll persist server-side later. */
+const readPref = () => { try { return localStorage.getItem(STORE_KEY); } catch { return null; } };
+const writePref = t => { try { localStorage.setItem(STORE_KEY, t); } catch {} };
+
+function applyTheme(t, persist){
+  if(!THEMES.includes(t)) t = DEFAULT_THEME;
+  document.body.dataset.theme = t;
+  document.querySelectorAll(".switch button").forEach(o=>o.setAttribute("aria-pressed", o.dataset.t === t));
+  document.getElementById("tTitle").textContent = COPY[t][0];
+  document.getElementById("tDesc").textContent  = COPY[t][1];
+  if(persist) writePref(t);
+}
+document.querySelectorAll(".switch button").forEach(b=>{
+  b.onclick = () => applyTheme(b.dataset.t, true);
+});
+
+/* ---- seat / board orientation: the viewing player is always at the bottom ---- */
+let seat = "red";
+document.querySelectorAll("button.seat").forEach(b=>{
+  b.onclick = () => {
+    seat = b.dataset.seat;
+    document.querySelectorAll("button.seat").forEach(o=>o.classList.toggle("on", o === b));
+    render(seat);
+  };
+});
+
+document.getElementById("cCoords").onchange  = e => document.body.classList.toggle("show-coords", e.target.checked);
+document.getElementById("cVectors").onchange = e => document.body.classList.toggle("show-vectors", e.target.checked);
+
+/* ---- boot ---- */
+applyTheme(readPref() || DEFAULT_THEME, false);
+render(seat);
+</script>
+</body>
+</html>

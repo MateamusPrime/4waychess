@@ -1,0 +1,14 @@
+{
+  "name": "@4wc/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure 4-way chess rules engine. Zero dependencies. No I/O, no framework, no rendering.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "perft": "node src/tools/perft-cli.ts"
+  }
+}
