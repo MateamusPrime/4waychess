@@ -36,6 +36,20 @@ export {
 export { generateLegal, generatePseudoLegal, turnOutcome } from './movegen.ts';
 export type { TurnOutcome } from './movegen.ts';
 
+export {
+  CHECKMATE_BONUS, CHECK_THREE_BONUS, CHECK_TWO_BONUS, PIECE_VALUES,
+  PROMOTED_QUEEN_VALUE, SELF_STALEMATE_BONUS, SPARE_KING_VALUE,
+  armiesCheckedBy, captureValue, checkBonusFor, kingCount, materialValue, newChecks,
+} from './scoring.ts';
+
+export { Game } from './game.ts';
+export type { EndReason, GameEvent, GameResult } from './game.ts';
+
+export {
+  ENGINE_VERSION, PGN4_VERSION, formatMove, parseMoveText, readPgn4, writePgn4,
+} from './pgn4.ts';
+export type { Pgn4Document, Pgn4Tags } from './pgn4.ts';
+
 export { perft, perftDetailed, perftDivide, plyOrder } from './perft.ts';
 
 export {

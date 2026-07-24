@@ -5,7 +5,7 @@ cannot be "mostly done" forever. Risk references point at `RISKS.md`.
 
 ---
 
-## Phase 0 — Spec and engine  ▸ *in progress*
+## Phase 0 — Spec and engine  ▸ **COMPLETE**
 
 **Goal:** a rules engine that is provably correct and knows nothing about screens or networks.
 
@@ -24,15 +24,16 @@ cannot be "mostly done" forever. Risk references point at `RISKS.md`.
 - [x] Independent naive generator + differential harness. (R4)
 - [x] Frozen perft baselines — opening **and** a tactical position.
 - [x] Architecture purity enforced in CI rather than by convention.
-- [ ] PGN4 read + write (move lists, not just positions).
-- [ ] Scoring: FFA point table, check bonuses, checkmate and stalemate awards. (§10)
-- [ ] Repetition and fifty-round detection. (§13)
-- [ ] Game-end conditions and elimination transitions. (§12)
+- [x] PGN4 read + write, versioned, recording ruleset and engine version per game. (§15)
+- [x] Scoring: FFA point table, check bonuses, checkmate and stalemate awards. (§10)
+- [x] Repetition and fifty-round detection. (§13)
+- [x] Game-end conditions, elimination transitions, Teams piece inheritance. (§11, §12)
+- [x] `Game` layer separating "playing a game" from "exploring a tree".
 
 **Gate:** differential test runs clean over millions of positions; every rule in `RULES.md` has a named
 test; engine has zero dependencies and zero imports from `apps/*`.
 
-**Gate status:** 83 tests passing. Purity check green.
+**Gate status: PASSED.** 127 tests passing. Purity check green. Engine has zero dependencies.
 
 Deep differential sweep **PASSED**: 3,000,000 positions across 4,109 games and 748,600 plies, covering
 both modes and random eliminations — **0 mismatches** between the fast and naive generators
@@ -42,7 +43,7 @@ both modes and random eliminations — **0 mismatches** between the fast and nai
 node packages/engine/src/tools/differential-cli.ts 3000000 3735928559
 ```
 
-Remaining gate work: PGN4, scoring, repetition/fifty-round detection, game-end transitions.
+Every rule in `RULES.md` has a named test that cites its section.
 
 ### What building it actually taught us
 
@@ -61,6 +62,16 @@ Remaining gate work: PGN4, scoring, repetition/fifty-round detection, game-end t
   is the most alien concept in the game and belongs near the front of the tutorial. (R20)
 - **The purity check earned its keep immediately**, catching a `Buffer.from()` in the engine that would
   have worked in tests and on a server, then failed in the browser and React Native.
+- **Standing checks made the multi-check bonus farmable.** Because two opponents move between your check
+  and the victim's reply, a check you delivered earlier is still standing on your next turn. Counting it
+  would have let a player park one permanent check and collect the two-player bonus forever. Bonuses now
+  count only checks a move *delivers*. Written up as RULES.md §10.1 — and it is a warning about the whole
+  scoring surface: **anything that pays out per-turn rather than per-event is farmable in a four-player
+  game**, and the FFA points race is the win condition, so this is a leaderboard-integrity issue, not a
+  cosmetic one. Every future scoring rule needs checking against it. (R3)
+- **Long lines make hand-built test positions treacherous.** Diagonals run up to 14 squares, so pieces
+  placed "well away" from a king routinely check it by accident. Several test positions had to be
+  rebuilt. Constructed positions should be asserted clean (`armiesCheckedBy(...) === []`) before use.
 
 ---
 

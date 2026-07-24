@@ -207,6 +207,22 @@ and the social dynamics (ganging up on the leader, kingmaking) are invisible to 
 *Mitigation:* an interactive tutorial, not a rules page; bot games as the on-ramp; surface *why* a move
 scored what it scored. This is content work and needs real time budgeted, not a week at the end.
 
+### R22 — Any scoring rule that pays per-turn rather than per-event is farmable
+**Bites: whenever a scoring rule is added.** Severity: **high** — found the hard way in Phase 0.
+In four-way chess two opponents move between your action and its consequence, so *states persist across
+your own turns* in a way they never do in two-player chess. The first version of the multi-check bonus
+counted every opponent currently in check, which meant a player could park one permanent standing check
+and then collect the two-player bonus every time they checked anyone else with an unrelated piece —
+unbounded free points. Fixed by counting only checks a move *delivers* (RULES.md §10.1).
+
+This generalises. In FFA the points race **is** the win condition, so a farmable rule does not merely
+look untidy — it decides games and poisons the ladder that the entire retention loop is built on (R3).
+
+*Mitigation:* every scoring rule must be expressed as a reward for an **event** (something this move
+caused) and never for a **state** (something that happens to be true). When adding any new scoring rule,
+explicitly ask: "can a player hold this condition true and collect repeatedly without doing anything
+new?" Add a test that answers it.
+
 ### R21 — Kingmaking and leader-bashing feel unfair
 **Bites: after launch, in reviews.** Severity: medium, inherent to the genre.
 In FFA the leader gets ganged up on, and an eliminated-in-spirit player can decide who wins. Some players

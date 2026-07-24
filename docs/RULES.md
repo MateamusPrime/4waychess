@@ -184,6 +184,20 @@ Points accrue to the *capturing* or *achieving* player and are never lost.
 14 × 14 board make bishops materially stronger, and in FFA the value table *is* the scoring system, so this
 is not cosmetic — it drives both player strategy and bot evaluation.
 
+### 10.1 Check bonuses count only checks the move DELIVERS — DECIDED (discovered during implementation)
+
+A check bonus is paid only for opponents put in check **by the move being played** — formally, those in
+check from the mover *after* the move who were not in check from the mover *before* it.
+
+This distinction barely exists in two-player chess but is decisive here. Because two opponents move
+between your check and the victim's reply, a check you delivered earlier is **still standing** when your
+next turn arrives. If standing checks counted, a player could park one permanent check and then collect
+the two-player bonus every single time they checked anybody else with an unrelated piece — an unbounded,
+trivially farmable point source that would poison the FFA scoring race and any leaderboard built on it.
+
+The same rule governs notation: `+` means the move delivers check to one opponent, `++` to two or more.
+Standing checks are unmarked, because marking them would put `+` on a large share of all moves.
+
 **Winning FFA is a points race, not last-player-standing.** A player who is eliminated early may still win.
 
 ## 11. Teams mode — DECIDED
