@@ -75,19 +75,39 @@ Every rule in `RULES.md` has a named test that cites its section.
 
 ---
 
-## Phase 1 — The board that feels like a million bucks
+## Phase 1 — The board that feels like a million bucks  ▸ *in progress*
 
 **Goal:** hotseat play that people want to touch. This is the phase the whole product is judged on.
 
-- Board renderer (per **D2**), all three themes, persisted preference, Midnight default.
-- Orientation: viewing player always at the bottom; hotseat rotates to the next *human* seat with an
-  **animated 90° spin**, never a snap.
-- Interaction: tap-to-select → tap-to-move as the primary path, drag as an enhancement. Prototype
-  pinch/pan on a real phone **in this phase**, not in Phase 5. (R7)
-- Mobile layout designed first, not retrofitted. (R8)
-- Colourblind-safe alternate palette shipped *with* the theme system. (R11)
-- Motion, sound design, capture/check/promotion/elimination sequences.
-- Local hotseat, full legality, both modes.
+### 1a — View model (`packages/ui-core`) ▸ **COMPLETE**, 165 tests
+
+The seam that makes this phase testable: ui-core emits a pure **draw-command list**, and the renderer
+only walks it. Appearance is therefore unit-testable with no canvas, no browser and no snapshots — and
+the renderer stays dumb enough to port between CanvasKit and react-native-skia essentially unchanged,
+which is what makes "one board on web and mobile" real rather than aspirational.
+
+- [x] All three themes as pure tokens, validated against the visual mockup.
+- [x] Persisted theme preference through an injected store port; Midnight default; corrupt or
+      partial stored settings degrade to defaults instead of breaking the app.
+- [x] Seat orientation for all four seats, with the inverse transform for hit-testing.
+- [x] Animated 90° seat spin that always takes the short way round — and the scene, not the host,
+      owns the outgoing/incoming projection switch so a hand-off cannot flash the wrong orientation.
+- [x] Tap-to-select → tap-to-move reducers, including the promotion picker and view-only mode.
+- [x] Pixel layout, camera with zoom and clamped pan, and gap-tolerant hit-testing.
+- [x] Colour-blind-safe palette **plus** per-army marker glyphs, so armies never depend on hue alone.
+- [x] Animation as a pure function of time — deterministic, no timers, no clock.
+- [x] Accessibility: keyboard cursor that steps over cut corners, and spoken descriptions for
+      squares, moves, turns, scores and army status.
+
+### 1b — Renderer and app ▸ *next*
+
+- [ ] `packages/board-render`: Skia command interpreter (CanvasKit on web, react-native-skia on mobile).
+- [ ] Custom SVG piece family — a large share of the "million bucks" feel. (R10)
+- [ ] `apps/web`: Next.js shell, settings UI, player panels, move list.
+- [ ] Local hotseat wired end to end, both modes.
+- [ ] Sound design: piece weight, capture, check, promotion, elimination.
+- [ ] Pinch/pan validated **on a real phone**, in this phase and not Phase 5. (R7)
+- [ ] Mobile layout designed first, not retrofitted. (R8)
 
 **Gate:** a stranger can be handed a phone and a laptop, plays a full hotseat game on each without
 instruction, and wants to play again. If that is not true, do not proceed.
