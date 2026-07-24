@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "esbuild", "src/main.ts", "--bundle", "--outfile=dist/main.js",
+        "--servedir=.", "--serve=127.0.0.1:8734"
+      ],
+      "cwd": "apps/web",
+      "port": 8734
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@4wc/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Playable web app: hotseat four-way chess on the shared board renderer.",
+  "scripts": {
+    "dev": "esbuild src/main.ts --bundle --outfile=dist/main.js --servedir=. --serve=127.0.0.1:8734",
+    "build": "esbuild src/main.ts --bundle --minify --outfile=dist/main.js",
+    "test": "esbuild src/main.ts --bundle --outfile=dist/main.js --log-level=warning"
+  },
+  "dependencies": {
+    "@4wc/board-render": "*",
+    "@4wc/engine": "*",
+    "@4wc/pieces": "*",
+    "@4wc/ui-core": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

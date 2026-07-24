@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>4-Way Chess</title>
+<style>
+  /* Chrome shell. Board colours come from theme tokens at runtime via CSS variables;
+     this file only lays out panels and controls. */
+  :root {
+    --page: #0a0e14; --text: #e6edf5; --muted: #7d8b9e;
+    --panel: rgba(255,255,255,.035); --panel-brd: rgba(255,255,255,.08);
+    --accent: #ffc93d; --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page); color: var(--text);
+    font: 14px/1.45 Inter, "Segoe UI", system-ui, sans-serif;
+    transition: background .4s ease, color .4s ease;
+    overflow: hidden;
+  }
+  #app {
+    display: grid; height: 100dvh; gap: 14px; padding: 14px;
+    grid-template-columns: 232px minmax(0,1fr) 248px;
+  }
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    #app { grid-template-columns: 1fr; height: auto; }
+    #stage { height: min(96vw, 70dvh); }
+  }
+
+  #stage { position: relative; min-height: 0; }
+  #board { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none;
+           outline: none; border-radius: var(--radius); }
+  #board:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--panel-brd);
+    border-radius: var(--radius); padding: 13px; margin-bottom: 12px;
+    transition: background .4s ease, border-color .4s ease;
+  }
+  .panel h3 {
+    font-size: 10px; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 9px; font-weight: 800;
+  }
+  aside { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+
+  /* Player cards */
+  .pcard {
+    display: flex; align-items: center; gap: 9px; padding: 8px 9px;
+    border-radius: 9px; border: 1.5px solid transparent; margin-bottom: 6px;
+    transition: border-color .25s ease, background .25s ease, opacity .3s ease;
+  }
+  .pcard:last-child { margin-bottom: 0; }
+  .pcard .chip { width: 11px; height: 11px; border-radius: 4px; flex: none; }
+  .pcard .name { flex: 1; font-weight: 700; font-size: 13px; text-transform: capitalize; }
+  .pcard .status { font-size: 10px; color: var(--muted); }
+  .pcard .pts { font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .pcard.turn { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .pcard.dead { opacity: .38; }
+  .pcard.check .status { color: #ff4d5e; font-weight: 800; }
+
+  /* Buttons and controls */
+  button, select {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--panel-brd); border-radius: 8px;
+    padding: 7px 12px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #14181f; border-color: var(--accent); font-weight: 800; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .setting { display: flex; justify-content: space-between; align-items: center;
+             padding: 5px 0; gap: 8px; font-size: 13px; }
+  .setting label { color: var(--text); }
+  .seg { display: flex; gap: 5px; }
+  .seg button { padding: 5px 9px; font-size: 12px; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #14181f; border-color: var(--accent); }
+  input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+
+  /* Move list */
+  #moves { font: 12px/1.7 ui-monospace, Consolas, monospace; max-height: 34dvh; overflow-y: auto; }
+  #moves .mrow { display: flex; gap: 6px; padding: 1px 4px; border-radius: 5px; flex-wrap: wrap; }
+  #moves .mrow:nth-child(odd) { background: rgba(128,128,128,.08); }
+  #moves .n { color: var(--muted); min-width: 20px; }
+  #moves .mv { display: inline-flex; align-items: center; gap: 4px; }
+  #moves .mv i { width: 6px; height: 6px; border-radius: 2px; font-style: normal; }
+
+  /* Banner + promotion picker */
+  #banner {
+    position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+    background: color-mix(in srgb, var(--page) 78%, black); border: 1px solid var(--panel-brd);
+    padding: 8px 18px; border-radius: 99px; font-weight: 700; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: opacity .3s ease; white-space: nowrap;
+  }
+  #banner.show { opacity: 1; }
+  #promo {
+    position: absolute; inset: 0; display: none; place-items: center;
+    background: rgba(0,0,0,.45); border-radius: var(--radius); z-index: 5;
+  }
+  #promo.open { display: grid; }
+  #promo .box { background: var(--page); border: 1px solid var(--panel-brd);
+                border-radius: 14px; padding: 16px; text-align: center; }
+  #promo .box p { margin-bottom: 10px; font-weight: 700; }
+  #promo canvas { cursor: pointer; border-radius: 10px; }
+  #promo canvas:hover { background: var(--panel); }
+
+  #zoomhint { position: absolute; right: 10px; bottom: 10px; font-size: 11px;
+              color: var(--muted); pointer-events: none; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  h1 { font-size: 19px; letter-spacing: -.02em; margin-bottom: 2px; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <aside id="left">
+      <div class="panel">
+        <h1>4-Way Chess</h1>
+        <div class="sub" id="modeLabel">Free-for-all · hotseat</div>
+        <div class="row">
+          <button class="primary" id="newFfa">New FFA</button>
+          <button id="newTeams">New Teams</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Players</h3>
+        <div id="players"></div>
+      </div>
+      <div class="panel">
+        <h3>Game</h3>
+        <div id="gameState" style="font-size:13px; color: var(--muted);">Red to move</div>
+      </div>
+    </aside>
+
+    <main id="stage">
+      <canvas id="board" tabindex="0" role="application"
+        aria-label="Four-way chess board. Use arrow keys to move, Enter to select."></canvas>
+      <div id="banner" role="status"></div>
+      <div id="promo"><div class="box"><p>Promote to</p><div id="promoOpts" class="row"></div></div></div>
+      <div id="zoomhint"></div>
+      <div class="sr" aria-live="polite" id="announcer"></div>
+    </main>
+
+    <aside id="right">
+      <div class="panel">
+        <h3>Moves</h3>
+        <div id="moves"></div>
+      </div>
+      <div class="panel">
+        <h3>Theme</h3>
+        <div class="seg" id="themeSeg" role="group" aria-label="Theme"></div>
+      </div>
+      <div class="panel">
+        <h3>Settings</h3>
+        <div id="settings"></div>
+      </div>
+    </aside>
+  </div>
+  <script type="module" src="dist/main.js"></script>
+</body>
+</html>

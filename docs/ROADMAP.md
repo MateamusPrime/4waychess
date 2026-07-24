@@ -99,15 +99,32 @@ which is what makes "one board on web and mobile" real rather than aspirational.
 - [x] Accessibility: keyboard cursor that steps over cut corners, and spoken descriptions for
       squares, moves, turns, scores and army status.
 
-### 1b — Renderer and app ▸ *next*
+### 1b — Renderer and app ▸ *mostly complete*
 
-- [ ] `packages/board-render`: Skia command interpreter (CanvasKit on web, react-native-skia on mobile).
-- [ ] Custom SVG piece family — a large share of the "million bucks" feel. (R10)
-- [ ] `apps/web`: Next.js shell, settings UI, player panels, move list.
-- [ ] Local hotseat wired end to end, both modes.
-- [ ] Sound design: piece weight, capture, check, promotion, elimination.
+- [x] `packages/pieces`: custom piece family as pure SVG path data — one geometry, themed by
+      treatment, so three themes do not triple the art budget. Validated by a path parser in tests.
+- [x] `packages/board-render`: command interpreter over a `Surface` port. Canvas2D adapter ships
+      first; CanvasKit and react-native-skia implement the same port (it is shaped around what
+      those APIs share: path strings, save/restore, 2D transforms). Tests run on a recording
+      mock — no canvas in CI. Path2D objects are cached (6 objects across any number of frames).
+- [x] `apps/web`: playable hotseat app, both modes, bundled with esbuild (~80 KB incl. engine).
+      Verified end to end in a live browser: tap g2→g4 plays, board rotates to Blue, Blue's taps
+      hit-test correctly in the rotated frame, move list records, themes switch live
+      (Atelier centre pixel sampled at exactly #a97a4e).
+- [x] Settings UI wired to the persisted store: theme, colour-blind mode + markers, coordinates,
+      rotate-on-handoff, sound, reduced motion (also honours `prefers-reduced-motion`).
+- [x] Sound design, fully synthesized with WebAudio — zero asset files. Piece weight (pitch-dropping
+      thump + filtered noise), capture, check, promotion, elimination, rotation, game over.
+- [x] Promotion picker overlay; keyboard play (arrows / Enter / Escape); aria-live announcements.
+- [x] Zoom and pan: wheel + pinch, double-tap toggles fit ↔ comfortable-touch zoom, pan only when
+      zoomed so tap stays unambiguous. (R7)
+- [ ] Piece silhouettes need a visual polish pass once seen on a real screen (knight especially).
 - [ ] Pinch/pan validated **on a real phone**, in this phase and not Phase 5. (R7)
-- [ ] Mobile layout designed first, not retrofitted. (R8)
+- [ ] Sound levels balanced by ear on real speakers.
+- [ ] Next.js shell arrives with Phase 3 (lobby/auth); the board is a canvas component either way.
+
+**Verified live:** frame self-heals a 0×0 canvas at boot (hidden tabs report no rect and never
+fire rAF — the first paint is now synchronous), full move pipeline, seat rotation, theme switching.
 
 **Gate:** a stranger can be handed a phone and a laptop, plays a full hotseat game on each without
 instruction, and wants to play again. If that is not true, do not proceed.

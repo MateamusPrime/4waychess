@@ -1,0 +1,16 @@
+{
+  "name": "@4wc/pieces",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The piece family as pure SVG path data. One geometry, themed by treatment, shared by every renderer.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@4wc/engine": "*"
+  }
+}
