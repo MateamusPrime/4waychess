@@ -78,22 +78,32 @@ export function directionToScreen(seat: Army, dx: number, dy: number): Cell {
 }
 
 /**
- * The number of 90-degree clockwise rotations between two seats' views.
+ * Signed quarter-turns of the board IMAGE that carry `from`'s view onto `to`'s view.
+ * Positive is clockwise on screen; the result always takes the short way round.
  *
- * Needed so seat hand-off can be ANIMATED as a real spin rather than a snap. On a 160-square
- * board a snap makes players lose their place completely, so the rotation must be visibly
- * continuous and take the short way round.
+ * The sign is the OPPOSITE of the seat-order direction, and getting this wrong is a visible
+ * bug: seats advance clockwise around the table (Red bottom → Blue left → Yellow top → Green
+ * right), but carrying the NEXT seat to the bottom of the screen rotates the board image
+ * ANTICLOCKWISE — Blue sits on the left edge, and it is the anticlockwise turn that brings the
+ * left edge to the bottom. Shipping the naive sign made the board spin +90° and then snap to
+ * the −90° view: a 180° flash at the end of every hand-off.
+ *
+ * Verified algebraically: mapping Red-view cells (c,r) to Blue-view cells gives (r, 13−c),
+ * which is a 90° anticlockwise rotation of the image. The continuity test in scene.test.ts
+ * pins the animated end frame to the settled view so this cannot regress silently.
  */
 export function rotationSteps(from: Army, to: Army): number {
   const order: readonly Army[] = ARMIES;
   const delta = (order.indexOf(to) - order.indexOf(from) + 4) % 4;
-  // Prefer the short way: 3 steps clockwise is 1 step anticlockwise.
-  return delta === 3 ? -1 : delta;
+  if (delta === 0) return 0;
+  if (delta === 1) return -1; // next seat: one quarter-turn anticlockwise
+  if (delta === 2) return -2; // opposite seat: half turn (direction kept consistent)
+  return 1;                   // previous seat: one quarter-turn clockwise
 }
 
-/** Total board rotation in degrees for a seat, relative to Red's view. */
+/** Total board-image rotation in degrees for a seat's view, relative to Red's. */
 export function seatAngle(seat: Army): number {
-  return ARMIES.indexOf(seat) * 90;
+  return z(-ARMIES.indexOf(seat) * 90);
 }
 
 /** Screen cells that are playable for this seat, in row-major order. */

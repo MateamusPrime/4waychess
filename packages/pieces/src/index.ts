@@ -34,11 +34,21 @@ const ROOK =
   'M32 16 L42 16 L42 24 L47 24 L47 16 L53 16 L53 24 L58 24 L58 16 L68 16 ' +
   'L68 30 L62 36 L62 66 L68 74 L68 82 L32 82 L32 74 L38 66 L38 36 L32 30 Z ' + PLINTH;
 
-/** Horse head facing the viewer's left; a single silhouette so it survives 24px. */
+/**
+ * Horse head in profile, facing the viewer's left. The two features that make a knight read
+ * as a horse at any size are the protruding muzzle and the ears — the first cut of this piece
+ * lacked both and was memorably described as "a lamp on a table". Anatomy, in path order:
+ * chest → throat → jaw → chin → rounded nose → nose bridge → brow → front ear → notch →
+ * back ear → skull → arched neck crest → back → base.
+ */
 const KNIGHT =
-  'M40 82 C40 70 34 66 35 55 C36 43 45 31 59 26 L57 16 L63 21 L67 14 L70 25 ' +
-  'C77 31 80 41 78 51 C77 57 71 60 66 57 C61 54 63 47 58 45 ' +
-  'C55.5 44 54 47 51 50 C46 55 43 58 43 64 C43 71 47 74 47 82 Z ' + PLINTH;
+  'M41 82 C39 74 37 69 38 63 C38.5 58 42 55.5 46 54.5 ' +
+  'C41 57 34 58 29 55 C24 52 20.5 47.5 22 44 C23 41.5 25.5 41.5 27.5 41 ' +
+  'C29.5 40.5 30.5 38.5 32 36 C34 32.5 38 29.5 44 27.5 ' +
+  'C45 21.5 47 16.5 50.5 13.5 C52.5 16 53 19.5 53 22 ' +
+  'C55.5 20 59.5 18.5 62.5 13.5 C65.5 16 66.5 21 66.5 25 ' +
+  'C71 30.5 73.5 36.5 74 44 C74.5 52 73 58 71.5 62 ' +
+  'C71 69 71 76 71.5 82 Z ' + PLINTH;
 
 const BISHOP =
   'M50 12 C53.3 12 56 14.7 56 18 C56 21.3 53.3 24 50 24 C46.7 24 44 21.3 44 18 ' +

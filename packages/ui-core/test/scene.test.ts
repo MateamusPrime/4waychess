@@ -7,6 +7,7 @@ import type { Army, PieceType, Ruleset } from '@4wc/engine';
 import { THEMES, THEME_IDS, COLORBLIND_ARMIES } from '../src/themes.ts';
 import { computeLayout, rectCenter, squareRect } from '../src/layout.ts';
 import { INITIAL_INTERACTION, tapSquare, observeMove } from '../src/interaction.ts';
+import { rotationSteps } from '../src/view.ts';
 import { DURATION, NO_ANIMS, add, moveAnimFor } from '../src/animation.ts';
 import { buildScene, commandsWithRole, roleOrder, withAlpha } from '../src/scene.ts';
 import type { Role, Scene, SceneInput } from '../src/scene.ts';
@@ -297,16 +298,59 @@ describe('animation is reflected in the scene', () => {
   });
 
   test('the board carries a rotation only while a seat hand-off is running', () => {
+    // Red -> Blue is an ANTICLOCKWISE quarter-turn of the image (rotationSteps = -1).
     const anims = add(NO_ANIMS, {
-      kind: 'seat', fromSeat: 'red', toSeat: 'blue', steps: 1,
+      kind: 'seat', fromSeat: 'red', toSeat: 'blue', steps: -1,
       startMs: 0, durationMs: DURATION.seatRotate,
     });
     assert.equal(buildScene(input()).rotation, 0, 'at rest');
     const mid = buildScene(input({ anims, now: DURATION.seatRotate / 2 })).rotation;
-    assert.ok(mid > 0 && mid < 90, `mid-spin should be part-way, got ${mid}`);
+    assert.ok(mid < 0 && mid > -90, `mid-spin should be part-way anticlockwise, got ${mid}`);
     // Once complete the rotation resets, because the commands are now projected from the
-    // incoming seat. A lingering 90 would double the rotation.
+    // incoming seat. A lingering -90 would double the rotation.
     assert.equal(buildScene(input({ anims, now: DURATION.seatRotate })).rotation, 0);
+  });
+
+  test('the spin lands exactly on the incoming view — no flash at the end (regression)', () => {
+    // The shipped bug: the board spun +90 clockwise, then the projection switched to what is
+    // actually the -90 view — a 180-degree jump on every hand-off. This test rotates the
+    // final animated frame's red-king position by the scene rotation and demands it coincide
+    // with the settled Blue-view position, so the discontinuity can never come back.
+    const pos = startingPosition();
+    const l = computeLayout(VP, THEMES.midnight);
+    const anims = add(NO_ANIMS, {
+      kind: 'seat', fromSeat: 'red', toSeat: 'blue', steps: rotationSteps('red', 'blue'),
+      startMs: 0, durationMs: DURATION.seatRotate,
+    });
+    const ctx = { position: pos, seat: 'blue' as Army, controllable: ['blue'] as Army[] };
+
+    const kingCenter = (scene: Scene): { x: number; y: number } => {
+      const k = commandsWithRole(scene, 'piece').find(
+        (c) => c.kind === 'piece' && c.piece === 'k' && c.army === 'red',
+      );
+      if (k === undefined || k.kind !== 'piece') throw new Error('unreachable');
+      return rectCenter(k.rect);
+    };
+
+    // A whisker before the end: rotation is ~-90 and commands are still in Red's projection.
+    const nearEnd = buildScene(input({ ctx, anims, now: DURATION.seatRotate - 0.001 }));
+    const p = kingCenter(nearEnd);
+    const c = nearEnd.rotationCenter;
+    const theta = (nearEnd.rotation * Math.PI) / 180;
+    const rotated = {
+      x: c.x + (p.x - c.x) * Math.cos(theta) - (p.y - c.y) * Math.sin(theta),
+      y: c.y + (p.x - c.x) * Math.sin(theta) + (p.y - c.y) * Math.cos(theta),
+    };
+
+    // Settled: rotation 0, commands in Blue's projection.
+    const settled = buildScene(input({ ctx, anims, now: DURATION.seatRotate }));
+    const target = kingCenter(settled);
+
+    assert.ok(
+      Math.hypot(rotated.x - target.x, rotated.y - target.y) < l.square * 0.02,
+      `end of spin (${rotated.x.toFixed(1)},${rotated.y.toFixed(1)}) must coincide with ` +
+      `settled view (${target.x.toFixed(1)},${target.y.toFixed(1)})`,
+    );
   });
 
   test('a hand-off projects from the OUTGOING seat while spinning, and the incoming seat after', () => {
@@ -315,7 +359,7 @@ describe('animation is reflected in the scene', () => {
     // the board would flash the wrong way round for a frame.
     const pos = startingPosition();
     const anims = add(NO_ANIMS, {
-      kind: 'seat', fromSeat: 'red', toSeat: 'blue', steps: 1,
+      kind: 'seat', fromSeat: 'red', toSeat: 'blue', steps: -1,
       startMs: 0, durationMs: DURATION.seatRotate,
     });
     const ctx = { position: pos, seat: 'blue' as Army, controllable: ['blue'] as Army[] };

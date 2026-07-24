@@ -95,13 +95,48 @@ describe('view transforms', () => {
 });
 
 describe('seat rotation', () => {
-  test('rotationSteps always takes the short way round', () => {
+  test('handing to the NEXT seat rotates the image anticlockwise', () => {
+    // Seats advance clockwise around the table, but carrying the next seat to the bottom of
+    // the screen rotates the board IMAGE anticlockwise. Shipping the naive positive sign made
+    // the board spin +90 and then snap to the -90 view — a 180-degree flash on every hand-off.
     assert.equal(rotationSteps('red', 'red'), 0);
-    assert.equal(rotationSteps('red', 'blue'), 1);
-    assert.equal(rotationSteps('red', 'yellow'), 2);
-    // Red -> Green is 3 clockwise, so it must go 1 anticlockwise instead.
-    assert.equal(rotationSteps('red', 'green'), -1);
-    assert.equal(rotationSteps('green', 'red'), 1);
+    assert.equal(rotationSteps('red', 'blue'), -1);
+    assert.equal(rotationSteps('blue', 'yellow'), -1);
+    assert.equal(rotationSteps('yellow', 'green'), -1);
+    assert.equal(rotationSteps('green', 'red'), -1);
+    assert.equal(rotationSteps('red', 'yellow'), -2);
+    // Going BACK a seat is the one clockwise case.
+    assert.equal(rotationSteps('red', 'green'), 1);
+    assert.equal(rotationSteps('blue', 'red'), 1);
+  });
+
+  test('the rotation is algebraically consistent with the view transforms', () => {
+    // rotationSteps must agree with what toCell actually does: rotating from-view cells by
+    // steps * 90 degrees about the grid centre must land exactly on to-view cells. This ties
+    // the animation to the projection, which is precisely what regressed.
+    const rotate = (col: number, row: number, steps: number): [number, number] => {
+      let c = col - 6.5;
+      let r = row - 6.5;
+      const turns = ((steps % 4) + 4) % 4;
+      for (let i = 0; i < turns; i++) {
+        const [nc, nr] = [-r, c]; // one 90-degree clockwise image rotation, y-down
+        c = nc;
+        r = nr;
+      }
+      return [c + 6.5, r + 6.5];
+    };
+    for (const from of ARMIES) {
+      for (const to of ARMIES) {
+        const steps = rotationSteps(from, to);
+        for (const sq of SQUARES) {
+          const a = toCell(from, sq);
+          const b = toCell(to, sq);
+          const [c, r] = rotate(a.col, a.row, steps);
+          assert.ok(Math.abs(c - b.col) < 1e-9 && Math.abs(r - b.row) < 1e-9,
+            `${from}->${to} ${squareName(sq)}: rotated (${c},${r}) != (${b.col},${b.row})`);
+        }
+      }
+    }
   });
 
   test('no rotation is ever more than a half turn', () => {
@@ -112,8 +147,8 @@ describe('seat rotation', () => {
     }
   });
 
-  test('seatAngle advances 90 degrees per seat in turn order', () => {
-    assert.deepEqual(ARMIES.map(seatAngle), [0, 90, 180, 270]);
+  test('seatAngle matches rotationSteps from Red', () => {
+    assert.deepEqual(ARMIES.map(seatAngle), [0, -90, -180, -270]);
   });
 });
 
