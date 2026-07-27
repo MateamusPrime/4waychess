@@ -13,7 +13,7 @@ export type { SearchOptions, SearchResult } from './search.ts';
 export { pickMove } from './search.ts';
 
 export type { Bot, Difficulty, Personality, PersonalityId } from './personalities.ts';
-export { DIFFICULTIES, PERSONALITIES, PERSONALITY_IDS, makeBot } from './personalities.ts';
+export { DIFFICULTIES, PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign } from './personalities.ts';
 
 export type { Rng } from './rng.ts';
 export { makeRng } from './rng.ts';

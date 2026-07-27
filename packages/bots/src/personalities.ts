@@ -8,7 +8,7 @@
  * search depth, node budget and root temperature.
  */
 
-import { generateLegal } from '@4wc/engine';
+import { ARMIES, generateLegal, materialValue } from '@4wc/engine';
 import type { Army, Move, Position } from '@4wc/engine';
 import { DEFAULT_WEIGHTS, uniformWeights } from './eval.ts';
 import type { EvalWeights, WeightsByArmy } from './eval.ts';
@@ -105,6 +105,29 @@ export interface Bot {
   difficulty: Difficulty;
   /** Choose a move for `army` in this position. Null only when there is no legal move. */
   pick(pos: Position, army: Army): Move | null;
+}
+
+/**
+ * Should this bot resign?
+ *
+ * Found in an all-bot soak: a finished game refused to end. Three near-bare kings shuffled
+ * around one rook for dozens of rounds — the points race was long decided, no shuffle could
+ * change it, and the fifty-round rule was most of an hour away. A human in that seat resigns,
+ * and under our rules (RULES.md §12) that is the CORRECT collapse: when the hopeless players
+ * concede, the game ends and the points leader wins.
+ *
+ * Deliberately strict, because resigning a winnable game reads far worse than shuffling:
+ *  - bare king only (no material at all);
+ *  - more than CHECKMATE_BONUS points behind the leader, so even a miracle +20 king capture
+ *    could not close the gap;
+ *  - FFA only — in Teams your pieces outlive you via your partner, so the seat still matters.
+ */
+export function wantsResign(pos: Position, army: Army): boolean {
+  if (pos.rules.mode !== 'ffa') return false;
+  if (!pos.isActive(army)) return false;
+  if (materialValue(pos, army) > 0) return false;
+  const best = Math.max(...ARMIES.filter((a) => a !== army).map((a) => pos.points[a]));
+  return best - pos.points[army] > 20;
 }
 
 /**

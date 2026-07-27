@@ -22,7 +22,7 @@ import type {
 } from '@4wc/ui-core';
 import { Canvas2DSurface, renderScene } from '@4wc/board-render';
 import { PIECE_FILL_RULE, PIECE_PATHS, PIECE_VIEWBOX } from '@4wc/pieces';
-import { PERSONALITIES, PERSONALITY_IDS, makeBot } from '@4wc/bots';
+import { PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign } from '@4wc/bots';
 import type { Bot, Difficulty, PersonalityId } from '@4wc/bots';
 import { GameAudio } from './audio.ts';
 
@@ -282,6 +282,21 @@ function scheduleBot(): void {
   botTimer = window.setTimeout(() => {
     botTimer = null;
     if (game.result().over || game.pos.turn !== turn) return;
+
+    // A hopeless bot resigns rather than shuffling a bare king for forty rounds — and when
+    // the last hopeless seats concede, the game correctly ends with the points leader winning.
+    if (wantsResign(game.pos, turn)) {
+      game.resign(turn);
+      audio.play('eliminate');
+      banner(`${cap(turn)} resigns`);
+      announce(`${turn} resigns.`);
+      refreshChecked();
+      syncChrome();
+      if (game.result().over) audio.play('gameover');
+      else scheduleBot();
+      return;
+    }
+
     const move = bot.pick(game.pos, turn);
     if (move !== null) playMove(move);
   }, settings.reducedMotion ? 120 : 550 + Math.random() * 450);
@@ -655,6 +670,13 @@ requestAnimationFrame(loop);
     if (botTimer !== null) {
       window.clearTimeout(botTimer);
       botTimer = null;
+    }
+    if (wantsResign(game.pos, turn)) {
+      game.resign(turn);
+      refreshChecked();
+      syncChrome();
+      frame(performance.now());
+      return `resigned:${turn}`;
     }
     const move = bot.pick(game.pos, turn);
     if (move !== null) playMove(move);

@@ -9,7 +9,7 @@ import { DEFAULT_WEIGHTS, evaluate, uniformWeights } from '../src/eval.ts';
 import { pickMove } from '../src/search.ts';
 import type { SearchOptions } from '../src/search.ts';
 import {
-  DIFFICULTIES, PERSONALITIES, PERSONALITY_IDS, makeBot,
+  DIFFICULTIES, PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign,
 } from '../src/personalities.ts';
 import { makeRng } from '../src/rng.ts';
 
@@ -99,6 +99,30 @@ describe('evaluation', () => {
     pos.remove(parseSquare('d14'));
     const after = evaluate(pos, uniformWeights());
     assert.ok(after.red < scores.red, 'Red feels the partner\'s loss');
+  });
+
+  test('finishing: a dominant army scores higher with its king nearer a beaten opponent', () => {
+    // Red has K+Q+R (14) against Green's bare king; Blue and Yellow retain enough material
+    // that the finishing condition only fires for the Red/Green pair. The near position has
+    // Red's king marching toward n11; the far position leaves it home. Everything else equal.
+    const common = {
+      a4: 'bK', b5: 'bQ', k12: 'yK', j11: 'yQ', n11: 'gK', h7: 'rQ', h6: 'rR',
+    } as const;
+    const far = build({ ...common, e2: 'rK' });
+    const near = build({ ...common, k9: 'rK' });
+    const sFar = evaluate(far, uniformWeights());
+    const sNear = evaluate(near, uniformWeights());
+    assert.ok(
+      sNear.red > sFar.red + 0.3,
+      `approaching the beaten king must pay: near=${sNear.red.toFixed(2)} far=${sFar.red.toFixed(2)}`,
+    );
+  });
+
+  test('finishing never fires between healthy armies', () => {
+    // At the opening everyone holds full material, so the term is zero and symmetry holds
+    // (also covered by the symmetry test, but the condition boundary deserves its own name).
+    const scores = evaluate(startingPosition(), uniformWeights());
+    for (const a of ARMIES) assert.ok(Math.abs(scores[a] - scores.red) < 1e-9, a);
   });
 
   test('kingmaker aversion punishes lines where the leader stands taller', () => {
@@ -288,6 +312,53 @@ describe('personalities', () => {
       const m = bot.pick(pos, 'red');
       assert.equal(squareName(m!.to), 'h9', `seed ${seed}`);
     }
+  });
+});
+
+describe('resignation (RULES.md §12)', () => {
+  test('a bare king hopelessly behind resigns', () => {
+    const pos = build({ ...FAR_KINGS, h7: 'yQ', h6: 'yR' });
+    pos.points.yellow = 40;
+    pos.points.red = 5;
+    assert.equal(wantsResign(pos, 'red'), true);
+  });
+
+  test('within one checkmate bonus of the leader, it keeps playing', () => {
+    // A +20 king capture could still close an 18-point gap, so the seat is not hopeless.
+    const pos = build({ ...FAR_KINGS, h7: 'yQ' });
+    pos.points.yellow = 23;
+    pos.points.red = 5;
+    assert.equal(wantsResign(pos, 'red'), false);
+  });
+
+  test('any material at all means playing on', () => {
+    const pos = build({ ...FAR_KINGS, e4: 'rP', h7: 'yQ' });
+    pos.points.yellow = 60;
+    assert.equal(wantsResign(pos, 'red'), false, 'even a lone pawn can promote');
+  });
+
+  test('the points leader never resigns, and neither does a Teams player', () => {
+    const lead = build({ ...FAR_KINGS, h7: 'yQ' });
+    lead.points.red = 50;
+    assert.equal(wantsResign(lead, 'red'), false);
+
+    const teams = build({ ...FAR_KINGS, h7: 'yQ' }, TEAMS_RULES);
+    teams.points.yellow = 60;
+    assert.equal(wantsResign(teams, 'red'), false, 'in Teams your pieces outlive you');
+  });
+
+  test('resignations collapse a decided endgame to the correct winner', () => {
+    // The soak-test scenario in miniature: three bare kings, one leader, nothing anyone can
+    // do. Both hopeless seats resign, the game ends by elimination, the leader wins.
+    const g = new Game(build({ ...FAR_KINGS, h7: 'yQ' }));
+    g.pos.points.yellow = 55;
+    g.pos.points.red = 10;
+    g.pos.points.blue = 12;
+    g.pos.points.green = 30;
+    for (const a of ['red', 'blue', 'green'] as Army[]) {
+      if (wantsResign(g.pos, a)) g.resign(a);
+    }
+    assert.deepEqual(g.result(), { over: true, reason: 'elimination', winners: ['yellow'] });
   });
 });
 

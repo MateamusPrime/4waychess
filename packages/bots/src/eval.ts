@@ -149,6 +149,31 @@ export function evaluate(pos: Position, weights: WeightsByArmy): Record<Army, nu
     }
   }
 
+  /**
+   * Finishing: reward marching your king toward an opponent you have overwhelmingly beaten.
+   *
+   * Added after a full human game ran 79 rounds: once an army is reduced to a near-bare king,
+   * nothing in the eval made the dominant side actually approach and end them — pressure
+   * counts pieces near enemy kings but deliberately excludes the king itself, and mating a
+   * dodging king REQUIRES the attacking king to box it in. Ten rounds of mutual king
+   * shuffling reads as "the bots don't know how to win", which is a fun-killer even when
+   * every individual move is sound.
+   */
+  const finishing: Record<Army, number> = { red: 0, blue: 0, yellow: 0, green: 0 };
+  const FINISHER = 0.12;
+  for (const a of ARMIES) {
+    const ka = kings[a];
+    if (ka === undefined || !pos.isActive(a)) continue;
+    for (const e of ARMIES) {
+      const ke = kings[e];
+      if (ke === undefined || !pos.isActive(e) || !pos.areEnemies(a, e)) continue;
+      if (material[e] <= 5 && material[a] >= material[e] + 12) {
+        const dist = Math.max(Math.abs(ka.x - ke.x), Math.abs(ka.y - ke.y));
+        finishing[a] += (13 - dist) * FINISHER;
+      }
+    }
+  }
+
   const base: Record<Army, number> = { red: 0, blue: 0, yellow: 0, green: 0 };
   for (const a of ARMIES) {
     const w = weights[a];
@@ -164,7 +189,8 @@ export function evaluate(pos: Position, weights: WeightsByArmy): Record<Army, nu
       w.pawnAdvance * pawnAdv[a] -
       w.kingSafety * danger[a] +
       w.aggression * pressure[a] -
-      w.hanging * hangingLoss[a];
+      w.hanging * hangingLoss[a] +
+      finishing[a];
   }
 
   // Kingmaker: subtract a slice of the leading opponent's standing from your own score, so
