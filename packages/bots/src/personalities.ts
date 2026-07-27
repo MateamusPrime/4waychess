@@ -37,6 +37,8 @@ export const PERSONALITIES: Readonly<Record<PersonalityId, Personality>> = {
       kingSafety: 0.18,
       material: 0.8,
       center: 0.04,
+      // Reaper accepts sharper positions, but "careless" must never mean "hangs queens".
+      hanging: 0.85,
     },
   },
   turtle: {
@@ -49,6 +51,7 @@ export const PERSONALITIES: Readonly<Record<PersonalityId, Personality>> = {
       aggression: 0.05,
       material: 1.0,
       pawnAdvance: 0.03,
+      hanging: 1.3,
     },
   },
   opportunist: {

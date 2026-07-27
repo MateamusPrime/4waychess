@@ -30,7 +30,7 @@ export {
 } from './fen4.ts';
 
 export {
-  attackersOf, checkingArmies, isAttacked, isAttackedBy, isInCheck,
+  attackMap, attackersOf, checkingArmies, isAttacked, isAttackedBy, isInCheck,
 } from './attacks.ts';
 
 export { generateLegal, generatePseudoLegal, turnOutcome } from './movegen.ts';

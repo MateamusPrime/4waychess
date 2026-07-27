@@ -14,7 +14,8 @@
  */
 
 import {
-  ARMIES, PARTNER, PIECE_VALUES, codeArmy, codePromoted, codeType, fileOf, rankOf, toOwn,
+  ARMIES, PARTNER, PIECE_VALUES, attackMap, codeArmy, codePromoted, codeType, fileOf, rankOf,
+  toOwn,
 } from '@4wc/engine';
 import type { Army, PieceType, Position } from '@4wc/engine';
 
@@ -33,6 +34,8 @@ export interface EvalWeights {
   aggression: number;
   /** Kingmaker: how much this army wants the current leader pulled down. */
   leaderAversion: number;
+  /** Penalty for own pieces standing on attacked squares — the anti-blunder term. */
+  hanging: number;
 }
 
 export const DEFAULT_WEIGHTS: EvalWeights = {
@@ -43,7 +46,12 @@ export const DEFAULT_WEIGHTS: EvalWeights = {
   kingSafety: 0.35,
   aggression: 0.15,
   leaderAversion: 0,
+  hanging: 1.0,
 };
+
+/** Fractions of a piece's value considered at risk when it stands on an attacked square. */
+const HANGING_UNDEFENDED = 0.45;
+const HANGING_DEFENDED = 0.12;
 
 export type WeightsByArmy = Readonly<Record<Army, EvalWeights>>;
 
@@ -109,6 +117,38 @@ export function evaluate(pos: Position, weights: WeightsByArmy): Record<Army, nu
     }
   }
 
+  /**
+   * Hanging pieces — the anti-blunder term, added after a live game showed exactly why it
+   * cannot be left to search. Yellow's queen captured a knight on a square guarded by a Red
+   * PAWN: at depth 2 Yellow sees only its own move and Green's reply, and Red's recapture sits
+   * three plies out, past any affordable horizon (a full round is depth 4). The evaluation
+   * must therefore know STATICALLY that a piece standing on an attacked square is partly lost
+   * — undefended queens especially. Attack maps make this O(pieces) per leaf.
+   */
+  const maps: Record<Army, Uint8Array> = {
+    red: attackMap(pos, 'red'),
+    blue: attackMap(pos, 'blue'),
+    yellow: attackMap(pos, 'yellow'),
+    green: attackMap(pos, 'green'),
+  };
+  const hangingLoss: Record<Army, number> = { red: 0, blue: 0, yellow: 0, green: 0 };
+  for (const p of pieces) {
+    if (p.type === 'k') continue; // the king has its own danger term
+    const sq = p.y * 14 + p.x;
+    let attacked = false;
+    let defended = false;
+    for (const other of ARMIES) {
+      if (maps[other][sq] !== 1) continue;
+      // areEnemies is false for the piece's own army and, in Teams, its partner — both of
+      // which count as defenders able to recapture.
+      if (pos.areEnemies(p.army, other)) attacked = true;
+      else defended = true;
+    }
+    if (attacked) {
+      hangingLoss[p.army] += p.value * (defended ? HANGING_DEFENDED : HANGING_UNDEFENDED);
+    }
+  }
+
   const base: Record<Army, number> = { red: 0, blue: 0, yellow: 0, green: 0 };
   for (const a of ARMIES) {
     const w = weights[a];
@@ -123,7 +163,8 @@ export function evaluate(pos: Position, weights: WeightsByArmy): Record<Army, nu
       w.center * center[a] +
       w.pawnAdvance * pawnAdv[a] -
       w.kingSafety * danger[a] +
-      w.aggression * pressure[a];
+      w.aggression * pressure[a] -
+      w.hanging * hangingLoss[a];
   }
 
   // Kingmaker: subtract a slice of the leading opponent's standing from your own score, so

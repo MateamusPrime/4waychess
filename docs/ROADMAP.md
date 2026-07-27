@@ -174,6 +174,16 @@ instruction, and wants to play again. If that is not true, do not proceed.
 - **Temperature needs a floor.** Softmax over raw scores gave a 9-point-worse move ~2% of the
   mass at easy tier — a missed free queen that reads as a bug, not as an easy opponent. Bounded
   by a 2.5-point candidate window.
+- **Search depth cannot protect against the player three seats away — the eval must.** First
+  human play-test (thank you): Magpie's queen captured a knight on a square guarded by a PAWN,
+  and lost queen-for-knight next round. At depth 2 a bot sees only the next mover's reply;
+  covering all three opponents needs depth 4, which no budget affords. Fix: `attackMap` in the
+  engine (differentially tested against both attack detectors) plus a static hanging-piece
+  term in the eval — an undefended piece on an attacked square is scored as ~45% lost at any
+  depth. Timing unchanged (7.8ms/move) because the map-based term is O(pieces) per leaf.
+- **Fixtures keep hanging kings.** Twice in one test, a hand-placed queen had a clean 14-square
+  line to a king the author forgot — and the bot "failed" the test by correctly grabbing +20.
+  On this board, always trace a placed slider's eight lines against all four kings.
 
 ---
 

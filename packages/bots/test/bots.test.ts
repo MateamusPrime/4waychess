@@ -138,17 +138,45 @@ describe('search', () => {
     assert.equal(squareName(r.move!.to), 'h10', 'the real queen is worth 9, the promoted 1');
   });
 
-  test('recaptures live THREE plies away, and depth 3 is what sees them', () => {
+  test('declines a poisoned pawn at ANY depth — the threat term sees what search cannot', () => {
     // A defining four-player fact: after Red grabs Yellow's defended pawn, Blue moves, THEN
-    // Yellow recaptures — the punishment is 3 plies deep, not 1 as two-player instinct says.
-    // So depth 2 is structurally greedy against the army that moves before you, and depth 3
-    // (the hard tier) is the first depth that plays sound exchanges against everyone.
+    // Yellow recaptures — the punishment is 3 plies deep, and a full round is depth 4. No
+    // affordable depth covers all three opponents, which is why the evaluation carries a
+    // static hanging-piece term: the rook standing on a bishop-guarded square is scored as
+    // partly lost the moment it lands, with no search at all.
     const pos = build({ ...FAR_KINGS, h5: 'rR', h9: 'yP', i10: 'yB' });
     pos.turn = 'red';
-    const d2 = pickMove(pos, opts({ depth: 2 }));
-    const d3 = pickMove(pos, opts({ depth: 3, nodeBudget: 60_000, branchCap: 14 }));
-    assert.equal(squareName(d2.move!.to), 'h9', 'depth 2 cannot see Yellow\'s reply yet');
-    assert.notEqual(squareName(d3.move!.to), 'h9', 'depth 3 sees Bxh9 coming and declines');
+    for (const depth of [1, 2, 3]) {
+      const r = pickMove(pos, opts({ depth, nodeBudget: 60_000, branchCap: 14 }));
+      assert.notEqual(squareName(r.move!.to), 'h9', `depth ${depth} must decline Rxh9`);
+    }
+  });
+
+  test('REGRESSION: the queen-into-pawn blunder from the reported game', () => {
+    // Live game, round 10: Yellow's queen captured a Red knight on i5 — a square guarded by
+    // Red's h4 pawn — and the pawn took the queen next round. Queen for knight, minus 6 on
+    // the exchange, invisible to depth 2 because Red moves three plies after Yellow. The
+    // hanging term must make every depth refuse the capture.
+    // The queen sits on i9 — chosen by tracing all eight of its lines against every king: on i11 it would see Green's king along rank 11 and
+    // correctly prefer the +20 king capture — the first version of this fixture hung a king
+    // and the bot outplayed the test.
+    const pos = build({
+      ...FAR_KINGS, i9: 'yQ', i5: 'rN', h4: 'rP',
+    });
+    pos.turn = 'yellow';
+    for (const depth of [1, 2]) {
+      const r = pickMove(pos, opts({ depth, nodeBudget: 30_000 }));
+      assert.ok(r.move !== null);
+      assert.notEqual(
+        squareName(r.move.to), 'i5',
+        `depth ${depth}: Qxi5 walks into h4xi5 and must be refused`,
+      );
+    }
+    // Sanity: with the pawn gone the knight really is free, and the queen should take it.
+    const free = build({ ...FAR_KINGS, i9: 'yQ', i5: 'rN' });
+    free.turn = 'yellow';
+    const r = pickMove(free, opts({ depth: 2 }));
+    assert.equal(squareName(r.move!.to), 'i5', 'an actually-free knight is still taken');
   });
 
   test('respects the node budget', () => {

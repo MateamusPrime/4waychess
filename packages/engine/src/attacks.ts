@@ -12,7 +12,8 @@
 
 import type { Army, Square } from './types.ts';
 import {
-  ARMIES, BISHOP_DIRS, KING_DELTAS, KNIGHT_DELTAS, PAWN_CAPTURES, ROOK_DIRS, step,
+  ARMIES, BISHOP_DIRS, KING_DELTAS, KNIGHT_DELTAS, NSQ, PAWN_CAPTURES, QUEEN_DIRS, ROOK_DIRS,
+  step,
 } from './geometry.ts';
 import { Position, codeArmy, codeType } from './position.ts';
 
@@ -92,6 +93,66 @@ export function attackersOf(pos: Position, sq: Square, army: Army): Army[] {
     if (isAttackedBy(pos, sq, other)) out.push(other);
   }
   return out;
+}
+
+/**
+ * Every square attacked by `army`, as a 0/1 map indexed by square.
+ *
+ * The forward complement to `isAttackedBy`'s reverse scan. Reverse detection wins when asking
+ * about ONE square (legality); a full map wins when a consumer needs many squares at once —
+ * bot evaluation asks "which of my pieces stand attacked, and are they defended?" for every
+ * piece on the board, and answering that piece-by-piece in reverse costs an order of magnitude
+ * more than building each army's map once.
+ *
+ * Semantics match isAttackedBy exactly (a differential test enforces this): attack means
+ * "could capture a piece standing there" — pawns count their capture diagonals only, sliders
+ * include the first blocker's square, and an inactive army attacks nothing.
+ */
+export function attackMap(pos: Position, by: Army): Uint8Array {
+  const map = new Uint8Array(NSQ);
+  if (!pos.isActive(by)) return map;
+
+  for (let s = 0; s < NSQ; s++) {
+    const code = pos.board[s];
+    if (code === 0 || codeArmy(code) !== by) continue;
+
+    switch (codeType(code)) {
+      case 'p':
+        for (const [dx, dy] of PAWN_CAPTURES[by]) {
+          const q = step(s, dx, dy);
+          if (q >= 0) map[q] = 1;
+        }
+        break;
+      case 'n':
+        for (const [dx, dy] of KNIGHT_DELTAS) {
+          const q = step(s, dx, dy);
+          if (q >= 0) map[q] = 1;
+        }
+        break;
+      case 'k':
+        for (const [dx, dy] of KING_DELTAS) {
+          const q = step(s, dx, dy);
+          if (q >= 0) map[q] = 1;
+        }
+        break;
+      case 'b':
+      case 'r':
+      case 'q': {
+        const dirs = codeType(code) === 'b' ? BISHOP_DIRS
+          : codeType(code) === 'r' ? ROOK_DIRS : QUEEN_DIRS;
+        for (const [dx, dy] of dirs) {
+          let q = step(s, dx, dy);
+          while (q >= 0) {
+            map[q] = 1;
+            if (pos.board[q] !== 0) break; // the blocker square is attacked; nothing beyond
+            q = step(q, dx, dy);
+          }
+        }
+        break;
+      }
+    }
+  }
+  return map;
 }
 
 /** Is this army's king currently in check? A missing king is never in check. */
