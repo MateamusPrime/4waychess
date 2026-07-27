@@ -131,18 +131,49 @@ instruction, and wants to play again. If that is not true, do not proceed.
 
 ---
 
-## Phase 2 — Bots
+## Phase 2 — Bots  ▸ *core complete, gate pending play-testing*
 
 **Goal:** a solo player always has a good game.
 
-- Heuristic eval + shallow max-n; 4PC-specific evaluation (bishops > knights, centre control, king safety
-  against three attackers, score-margin awareness).
-- Personalities: aggressive / turtle / opportunist / kingmaker. Difficulty tiers.
-- Teams-aware evaluation. (R6)
-- Per-move time budgets measured now, because they become a cost line later. (R16)
+- [x] `packages/bots` — engine-only dependency, no clock, no Math.random: budgets are node
+      counts and randomness is seeded, so every bot decision is reproducible (tests today,
+      server-side move verification later).
+- [x] 4PC evaluation: our piece values, banked FFA points as a first-class term, king danger
+      from three directions, centralisation, pawn advancement, promoted-queen = 1. Weights are
+      **per army**, which is how four personalities sit at one table.
+- [x] Shallow max-n with MVV move ordering, branch caps and node budgets.
+- [x] **Race-aware utility** — each node maximises own score minus the enemies' mean.
+- [x] **Capture points credited during search** (Position deliberately doesn't bank points;
+      the search must, or bots shrug at free queens — found live, see below).
+- [x] Personalities: Reaper (aggressive) / Bastion (turtle) / Magpie (opportunist) /
+      Leveller (kingmaker), distinct weight profiles, softmax variance **windowed to 2.5
+      points** so temperature varies play but can never blunder a hanging queen.
+- [x] Difficulty tiers: easy d1 / medium d2 / hard d3. Teams-aware via the engine's
+      `areEnemies` plus partner-score folding.
+- [x] App wiring: per-seat Human/personality picker, difficulty select, bot think-delay, board
+      rotation only for **human** hand-offs, default table = you vs Reaper/Magpie/Bastion.
+- [x] Measured: ~8ms per medium move in-browser; four-bot 80-ply stress run clean, close score
+      race (25/24/22/26). (R16)
+- [ ] **Gate:** fun to lose to, no broken-looking blunders — needs human play-testing.
 
-**Gate:** bots are *fun* to lose to and do not blunder in ways that read as broken. Measured by play, not
-by strength metrics.
+### What building it taught us
+
+- **The search couldn't see points.** `Position.makeMove` doesn't bank capture points — that is
+  the Game layer's job — so the search evaluated a queen capture at +0.5 over a king shuffle.
+  In FFA, points ARE the game; the search now credits `captureValue` on make and removes it on
+  unmake. The general rule: any consumer that explores moves without the Game layer must model
+  the scoring consequences itself.
+- **Max-n over absolute own-score misses half the game.** Capturing lowers the VICTIM's score,
+  not yours. Utility is now relative: own score minus the enemies' mean.
+- **Recaptures live three plies away.** After you take a defended piece, two other players move
+  before the owner recaptures. Depth 2 is structurally greedy against the army that moves
+  before you; depth 3 is the first depth that plays sound exchanges. A two-player instinct
+  that is simply false here.
+- **Raw xorshift32 betrays small seeds** (seed 1 → first output ≈ 6e-5): every bot opened
+  identically. Seeds are now hash-mixed and the generator warmed up.
+- **Temperature needs a floor.** Softmax over raw scores gave a 9-point-worse move ~2% of the
+  mass at easy tier — a missed free queen that reads as a bug, not as an easy opponent. Bounded
+  by a 2.5-point candidate window.
 
 ---
 

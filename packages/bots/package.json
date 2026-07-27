@@ -1,0 +1,16 @@
+{
+  "name": "@4wc/bots",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bot opponents: 4PC-specific evaluation, shallow max-n search, personalities over strength.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@4wc/engine": "*"
+  }
+}

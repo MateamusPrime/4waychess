@@ -72,6 +72,10 @@
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .setting { display: flex; justify-content: space-between; align-items: center;
              padding: 5px 0; gap: 8px; font-size: 13px; }
+  .seatrow { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
+  .seatrow .chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .seatrow label { flex: 1; text-transform: capitalize; }
+  .seatrow select { padding: 4px 8px; font-size: 12px; max-width: 150px; }
   .setting label { color: var(--text); }
   .seg { display: flex; gap: 5px; }
   .seg button { padding: 5px 9px; font-size: 12px; }
@@ -126,6 +130,17 @@
       <div class="panel">
         <h3>Players</h3>
         <div id="players"></div>
+      </div>
+      <div class="panel">
+        <h3>Seats <span style="font-weight:400;text-transform:none;letter-spacing:0">(applies on new game)</span></h3>
+        <div id="seats"></div>
+        <div class="setting"><label for="difficulty">Bot difficulty</label>
+          <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
       </div>
       <div class="panel">
         <h3>Game</h3>

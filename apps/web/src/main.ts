@@ -22,6 +22,8 @@ import type {
 } from '@4wc/ui-core';
 import { Canvas2DSurface, renderScene } from '@4wc/board-render';
 import { PIECE_FILL_RULE, PIECE_PATHS, PIECE_VIEWBOX } from '@4wc/pieces';
+import { PERSONALITIES, PERSONALITY_IDS, makeBot } from '@4wc/bots';
+import type { Bot, Difficulty, PersonalityId } from '@4wc/bots';
 import { GameAudio } from './audio.ts';
 
 /* ------------------------------------------------------------------ *
@@ -50,6 +52,34 @@ let checked: Army[] = [];
 const audio = new GameAudio();
 audio.enabled = settings.sound;
 
+/**
+ * Seat configuration. The default gives a solo player a game out of the box — the whole point
+ * of Phase 2 — with three distinct temperaments at the table.
+ */
+type SeatKind = 'human' | PersonalityId;
+const seatConfig: Record<Army, SeatKind> = {
+  red: 'human', blue: 'aggressive', yellow: 'opportunist', green: 'turtle',
+};
+let botDifficulty: Difficulty = 'medium';
+let bots: Partial<Record<Army, Bot>> = {};
+let botTimer: number | null = null;
+
+function isHuman(a: Army): boolean {
+  return seatConfig[a] === 'human';
+}
+function humanSeats(): Army[] {
+  return ARMIES.filter(isHuman);
+}
+function rebuildBots(): void {
+  bots = {};
+  for (const a of ARMIES) {
+    const kind = seatConfig[a];
+    if (kind !== 'human') {
+      bots[a] = makeBot(kind, botDifficulty, (Date.now() ^ ARMIES.indexOf(a) * 7919) >>> 0);
+    }
+  }
+}
+
 const canvas = document.getElementById('board') as HTMLCanvasElement;
 const rawCtx = canvas.getContext('2d');
 if (rawCtx === null) throw new Error('no 2d context');
@@ -69,8 +99,8 @@ function layout() {
 }
 
 function ictx(): InteractionContext {
-  // Hotseat: every active seat is human and controllable.
-  return { position: game.pos, seat, controllable: game.result().over ? [] : ARMIES };
+  // Only human seats are tappable; bot armies move themselves.
+  return { position: game.pos, seat, controllable: game.result().over ? [] : humanSeats() };
 }
 
 /* ------------------------------------------------------------------ *
@@ -204,12 +234,18 @@ function playMove(move: Move): void {
   rotateToTurn(now + (settings.reducedMotion ? 0 : DURATION.move + 60));
   announce(`${spoken}. ${describeTurn(game.pos, checked)}`);
   syncChrome();
+  scheduleBot();
 }
 
-/** Rotate the board so the player on move is at the bottom (ARCHITECTURE.md D12). */
+/**
+ * Rotate the board so the player on move is at the bottom (ARCHITECTURE.md D12) — but only
+ * for HUMAN seats. Spinning the board for a bot's turn would be pure disorientation: the
+ * human's frame of reference should only change when a different human takes the chair.
+ */
 function rotateToTurn(startMs: number): void {
   if (!settings.rotateOnHandoff || game.result().over) return;
   const to = game.pos.turn;
+  if (!isHuman(to)) return;
   if (to === seat) return;
   const steps = rotationSteps(seat, to);
   if (settings.reducedMotion) {
@@ -233,17 +269,45 @@ function applyStep(step: Step): void {
   }
 }
 
+/**
+ * Bot turns. A short "think" delay keeps bot moves legible — instant replies read as chaos
+ * when three bots move back to back. Search itself is synchronous and budgeted to stay well
+ * under a frame-budget-friendly ~40ms at the hard tier.
+ */
+function scheduleBot(): void {
+  if (botTimer !== null || game.result().over) return;
+  const turn = game.pos.turn;
+  const bot = bots[turn];
+  if (bot === undefined) return;
+  botTimer = window.setTimeout(() => {
+    botTimer = null;
+    if (game.result().over || game.pos.turn !== turn) return;
+    const move = bot.pick(game.pos, turn);
+    if (move !== null) playMove(move);
+  }, settings.reducedMotion ? 120 : 550 + Math.random() * 450);
+}
+
 function newGame(rules: Ruleset): void {
+  if (botTimer !== null) {
+    window.clearTimeout(botTimer);
+    botTimer = null;
+  }
   game = Game.create(rules);
   interaction = INITIAL_INTERACTION;
   anims = NO_ANIMS;
   checked = [];
   moveTexts.length = 0;
-  seat = 'red';
   camera = { zoom: 1, panX: 0, panY: 0 };
-  el('modeLabel').textContent = rules.mode === 'ffa' ? 'Free-for-all · hotseat' : 'Teams · hotseat';
-  announce(`New ${rules.mode === 'ffa' ? 'free-for-all' : 'teams'} game. Red to move.`);
+  rebuildBots();
+  // Seat the first human at the bottom; an all-bot table is watched from Red's side.
+  seat = humanSeats()[0] ?? 'red';
+  const modeName = rules.mode === 'ffa' ? 'Free-for-all' : 'Teams';
+  const nBots = ARMIES.filter((a) => !isHuman(a)).length;
+  el('modeLabel').textContent =
+    `${modeName} · ${nBots === 0 ? 'hotseat' : nBots === 4 ? 'bots only' : `${4 - nBots}P vs ${nBots} bots`}`;
+  announce(`New ${modeName} game. Red to move.`);
   syncChrome();
+  scheduleBot();
 }
 
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
@@ -439,7 +503,7 @@ function applyTheme(): void {
 }
 
 function syncChrome(): void {
-  // Player cards.
+  // Player cards. Bots show their personality name so the table reads as four characters.
   const cards = ARMIES.map((a) => {
     const active = game.pos.isActive(a);
     const turn = !game.result().over && game.pos.turn === a && active;
@@ -448,9 +512,11 @@ function syncChrome(): void {
     const color = settings.colorblind
       ? { red: '#d55e00', blue: '#0072b2', yellow: '#f0e442', green: '#009e73' }[a]
       : theme().armies[a];
+    const kind = seatConfig[a];
+    const label = kind === 'human' ? a : `${a} · ${PERSONALITIES[kind].name}`;
     return `<div class="pcard${turn ? ' turn' : ''}${active ? '' : ' dead'}${inCheck ? ' check' : ''}">
       <span class="chip" style="background:${color}"></span>
-      <span class="name">${a}</span>
+      <span class="name">${label}</span>
       <span class="status">${status}</span>
       <span class="pts">${game.pos.points[a]}</span>
     </div>`;
@@ -512,6 +578,27 @@ function buildChrome(): void {
     });
   }
 
+  // Seat picker: one row per army, Human or a bot personality.
+  const options = (sel: SeatKind): string =>
+    [`<option value="human"${sel === 'human' ? ' selected' : ''}>Human</option>`,
+      ...PERSONALITY_IDS.map((id) =>
+        `<option value="${id}"${sel === id ? ' selected' : ''}>Bot · ${PERSONALITIES[id].name}</option>`),
+    ].join('');
+  el('seats').innerHTML = ARMIES.map((a) => `
+    <div class="seatrow">
+      <span class="chip" style="background:${theme().armies[a]}"></span>
+      <label for="seat-${a}">${a}</label>
+      <select id="seat-${a}" data-army="${a}">${options(seatConfig[a])}</select>
+    </div>`).join('');
+  for (const a of ARMIES) {
+    (document.getElementById(`seat-${a}`) as HTMLSelectElement).addEventListener('change', (e) => {
+      seatConfig[a] = (e.target as HTMLSelectElement).value as SeatKind;
+    });
+  }
+  (document.getElementById('difficulty') as HTMLSelectElement).addEventListener('change', (e) => {
+    botDifficulty = (e.target as HTMLSelectElement).value as Difficulty;
+  });
+
   el('newFfa').addEventListener('click', () => newGame(FFA_RULES));
   el('newTeams').addEventListener('click', () => newGame(TEAMS_RULES));
 }
@@ -527,9 +614,11 @@ if (window.matchMedia('(prefers-reduced-motion: reduce)').matches && !settings.r
 buildChrome();
 applyTheme();
 resize();
+rebuildBots();
 refreshChecked();
 syncChrome();
 announce('Four-way chess. Red to move.');
+scheduleBot();
 
 // Paint immediately rather than waiting for the first rAF tick: a hidden or backgrounded tab
 // never fires rAF at all, and even in the common case this gets pixels up one frame sooner.
@@ -556,5 +645,20 @@ requestAnimationFrame(loop);
     syncChrome();
     frame(performance.now());
     return sq >= 0 ? squareName(sq) : 'none';
+  },
+  /** Force a pending bot move immediately — hidden tabs throttle setTimeout heavily. */
+  botStep: () => {
+    if (game.result().over) return 'over';
+    const turn = game.pos.turn;
+    const bot = bots[turn];
+    if (bot === undefined) return `human:${turn}`;
+    if (botTimer !== null) {
+      window.clearTimeout(botTimer);
+      botTimer = null;
+    }
+    const move = bot.pick(game.pos, turn);
+    if (move !== null) playMove(move);
+    frame(performance.now());
+    return `played:${turn}`;
   },
 };
