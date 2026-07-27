@@ -48,6 +48,9 @@ describe('bots purity', () => {
   });
 
   test('no clock, no Math.random, no I/O, no globals', () => {
+    // Tools are exempt: they are CLIs by definition (the arena harness prints and reads argv).
+    // Everything else must stay pure so bot decisions remain reproducible anywhere.
+    const core = FILES.filter((f) => !f.includes('tools'));
     const banned: [RegExp, string][] = [
       [/\bMath\.random\b/, 'Math.random — bots must be seeded'],
       [/\bDate\.now\b|new Date\(|performance\.now/, 'a clock — budgets are node counts'],
@@ -55,7 +58,7 @@ describe('bots purity', () => {
       [/\bwindow\b|\bdocument\b|\blocalStorage\b|\bBuffer\b|\bprocess\./, 'a platform global'],
       [/setTimeout|setInterval|requestAnimationFrame/, 'a timer'],
     ];
-    for (const f of FILES) {
+    for (const f of core) {
       const src = code(f);
       for (const [re, what] of banned) {
         assert.equal(re.test(src), false, `${relative(SRC, f)} references ${what}`);

@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Playable web app: hotseat four-way chess on the shared board renderer.",
   "scripts": {
-    "dev": "esbuild src/main.ts --bundle --outfile=dist/main.js --servedir=. --serve=127.0.0.1:8734",
-    "build": "esbuild src/main.ts --bundle --minify --outfile=dist/main.js",
-    "test": "esbuild src/main.ts --bundle --outfile=dist/main.js --log-level=warning"
+    "dev": "esbuild src/main.ts src/worker.ts --bundle --outdir=dist --servedir=. --serve=127.0.0.1:8734",
+    "build": "esbuild src/main.ts src/worker.ts --bundle --minify --outdir=dist",
+    "test": "esbuild src/main.ts src/worker.ts --bundle --outdir=dist --log-level=warning"
   },
   "dependencies": {
     "@4wc/board-render": "*",

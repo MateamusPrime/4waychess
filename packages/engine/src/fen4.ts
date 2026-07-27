@@ -144,6 +144,16 @@ export function parseFen4(fen: string, rules: Ruleset = FFA_RULES): Position {
   if (header[5] !== undefined && header[5].trim() !== '') {
     pos.halfmove = Number(header[5].trim()) || 0;
   }
+  // En passant rights: "e" + one "passed.victim.armyLetter" group per right, or absent/"x".
+  // Optional seventh field so pre-existing strings (which lack it) still parse.
+  if (header[6] !== undefined && header[6].startsWith('e')) {
+    for (const tok of header[6].slice(1).split(';')) {
+      const m = /^(\d+)\.(\d+)\.([rbyg])$/.exec(tok.trim());
+      if (m !== null) {
+        pos.ep.push({ passed: Number(m[1]), victim: Number(m[2]), army: LETTER_ARMY[m[3]] });
+      }
+    }
+  }
   return pos;
 }
 
@@ -154,7 +164,12 @@ export function serializeFen4(pos: Position): string {
   const cs = ARMIES.map((a) => (pos.castling[a].short ? '1' : '0')).join(',');
   const cl = ARMIES.map((a) => (pos.castling[a].long ? '1' : '0')).join(',');
   const pts = ARMIES.map((a) => String(pos.points[a])).join(',');
-  return `${t}-${dead}-${cs}-${cl}-${pts}-${pos.halfmove}-${serializeBoard(pos)}`;
+  // En passant rights ride along: a position sent over a wire (bot worker, server) must carry
+  // them, or the receiver silently loses legal moves. "x" keeps the field count stable.
+  const eps = pos.ep.length === 0
+    ? 'x'
+    : `e${pos.ep.map((e) => `${e.passed}.${e.victim}.${ARMY_LETTER[e.army]}`).join(';')}`;
+  return `${t}-${dead}-${cs}-${cl}-${pts}-${pos.halfmove}-${eps}-${serializeBoard(pos)}`;
 }
 
 /** A fresh game in our house ruleset. */

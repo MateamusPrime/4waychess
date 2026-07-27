@@ -5,7 +5,7 @@
       "name": "web",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
-        "esbuild", "src/main.ts", "--bundle", "--outfile=dist/main.js",
+        "esbuild", "src/main.ts", "src/worker.ts", "--bundle", "--outdir=dist",
         "--servedir=.", "--serve=127.0.0.1:8734"
       ],
       "cwd": "apps/web",

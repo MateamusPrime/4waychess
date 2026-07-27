@@ -11,6 +11,10 @@ export { DEFAULT_WEIGHTS, evaluate, uniformWeights } from './eval.ts';
 
 export type { SearchOptions, SearchResult } from './search.ts';
 export { pickMove } from './search.ts';
+export { selectFromScored, utility } from './core.ts';
+export { captureRollout } from './rollout.ts';
+export type { DeepOptions, DeepResult } from './deep.ts';
+export { pickMoveDeep } from './deep.ts';
 
 export type { Bot, Difficulty, Personality, PersonalityId } from './personalities.ts';
 export { DIFFICULTIES, PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign } from './personalities.ts';

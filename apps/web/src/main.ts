@@ -8,7 +8,7 @@
  */
 
 import {
-  ARMIES, FFA_RULES, Game, TEAMS_RULES, checkingArmies, formatMove, squareName,
+  ARMIES, FFA_RULES, Game, TEAMS_RULES, checkingArmies, formatMove, serializeFen4, squareName,
 } from '@4wc/engine';
 import type { Army, Move, PieceType, Ruleset } from '@4wc/engine';
 import {
@@ -63,6 +63,37 @@ const seatConfig: Record<Army, SeatKind> = {
 let botDifficulty: Difficulty = 'medium';
 let bots: Partial<Record<Army, Bot>> = {};
 let botTimer: number | null = null;
+let seatSeeds: Record<Army, number> = { red: 1, blue: 2, yellow: 3, green: 4 };
+
+/**
+ * Bot search runs in a worker so 60-300ms of deep thinking never freezes an animation. The
+ * worker is compute only: it receives FEN4 and returns from/to/promotion, which the main
+ * thread re-validates against its own legal moves. Falls back to synchronous in-thread search
+ * when workers are unavailable (file:// contexts, some test harnesses).
+ */
+let botWorker: Worker | null = null;
+let botRequestId = 0;
+try {
+  botWorker = new Worker('dist/worker.js');
+  botWorker.onmessage = (e: MessageEvent<{
+    id: number; army: Army; move: { from: number; to: number; promotion: string | null } | null;
+  }>) => {
+    const msg = e.data;
+    if (msg.id !== botRequestId) return; // stale reply from a superseded game or turn
+    if (game.result().over || game.pos.turn !== msg.army) return;
+    if (msg.move === null) return;
+    const legal = game.legalMoves().find(
+      (m) => m.from === msg.move!.from && m.to === msg.move!.to
+        && m.promotion === msg.move!.promotion,
+    );
+    if (legal !== undefined) playMove(legal);
+  };
+  botWorker.onerror = () => {
+    botWorker = null; // sync fallback from here on
+  };
+} catch {
+  botWorker = null;
+}
 
 function isHuman(a: Army): boolean {
   return seatConfig[a] === 'human';
@@ -75,7 +106,9 @@ function rebuildBots(): void {
   for (const a of ARMIES) {
     const kind = seatConfig[a];
     if (kind !== 'human') {
-      bots[a] = makeBot(kind, botDifficulty, (Date.now() ^ ARMIES.indexOf(a) * 7919) >>> 0);
+      const seed = (Date.now() ^ (ARMIES.indexOf(a) * 7919)) >>> 0;
+      seatSeeds[a] = seed;
+      bots[a] = makeBot(kind, botDifficulty, seed);
     }
   }
 }
@@ -297,6 +330,21 @@ function scheduleBot(): void {
       return;
     }
 
+    const kind = seatConfig[turn];
+    if (botWorker !== null && kind !== 'human') {
+      botRequestId++;
+      botWorker.postMessage({
+        id: botRequestId,
+        fen: serializeFen4(game.pos),
+        mode: game.rules.mode,
+        army: turn,
+        kind,
+        difficulty: botDifficulty,
+        // Vary per move so softmax variance is real; stay deterministic per (game, ply).
+        seed: (seatSeeds[turn] ^ Math.imul(game.moves.length + 1, 2654435761)) >>> 0,
+      });
+      return;
+    }
     const move = bot.pick(game.pos, turn);
     if (move !== null) playMove(move);
   }, settings.reducedMotion ? 120 : 550 + Math.random() * 450);

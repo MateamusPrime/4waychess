@@ -156,6 +156,49 @@ instruction, and wants to play again. If that is not true, do not proceed.
       race (25/24/22/26). (R16)
 - [ ] **Gate:** fun to lose to, no broken-looking blunders — needs human play-testing.
 
+### Phase 2.5 — search engineering ("Lever 1")
+
+- [x] FEN4 carries en passant rights, so wire-transferred positions lose no legal moves.
+- [x] `deep.ts`: iterative deepening, transposition table, capture rollout at the horizon
+      (true turn order with passes — resolves the three-plies-away recapture exactly), and a
+      **rational-reply layer** standing in for all three opponents' turns.
+- [x] Arena harness (`arena-cli.ts`) — candidate vs incumbent at EQUAL node budgets, seats
+      rotated. Doubles as the skeleton of the Lever-2 self-play tuner.
+- [x] Bot search moved off the UI thread into a Web Worker; replies re-validated on the main
+      thread against its own legal moves (the worker is compute, never authority).
+- [x] Easy stays on the classic engine (the on-ramp opponent); medium and hard use deep.
+
+### What Lever 1 taught us — every variant measured, every variant rejected
+
+Final arena results, 48 games each, candidate in one rotating seat vs three incumbents,
+equal 2,500-node budgets (seat-neutral win baseline 25%):
+
+| Variant | Wins | Points ratio | Why it lost |
+|---|---|---|---|
+| Paranoid BRS | 10.4% | 0.69x | Models 3 opponents colluding against you; paranoia is passivity, and passivity loses a points race |
+| Rational-reply BRS | 29.2% | 0.98x | Truer opponent model, but ANY reply compression hands the root two moves per round — tempo distortion caps it at parity |
+| Classic + capture rollout | 2.1% | 0.50x | Every node spent settling a leaf is a node not spent growing the tree; breadth dominates leaf accuracy by 2x |
+
+The converged law for this game at these budgets: **spend the entire budget on breadth of the
+true turn-order max-n model.** The static hanging-piece term already carries exchange risk.
+Difficulty tiers ship on the exact classic configs that were play-tested; `deep.ts` and
+`rollout.ts` remain in-tree as documented, tested, arena-refuted baselines.
+
+What genuinely shipped from Lever 1: the **arena harness** (it prevented three bad ships and
+is the skeleton of the Lever-2 self-play tuner), the **Web Worker** (bots think off the UI
+thread — engine-agnostic, and it means budgets can now scale with hardware rather than
+UI-thread politeness), **FEN4 en passant rights** (wire-transferred positions lose no legal
+moves), and the meta-lesson now pinned to the wall: **two-player search wisdom does not
+transfer to four-player FFA. Measure, never assume.**
+
+Smaller findings: replyCap is the BRS affordability lever (depth-2 at the opening: ~750k
+nodes at cap 24, ~10k at cap 5); a saturated-budget A/B proves nothing (both runs stop at the
+cap — comparisons must complete); block-buffered background runs must not share a log file.
+
+Strength path forward, in order: **Lever 2** (self-play weight tuning on the arena skeleton —
+the eval weights are hand-guesses and the one axis nothing has yet optimised), larger worker
+budgets, and eventually Lever 3 (learned eval over the Phase-3 game corpus).
+
 ### What building it taught us
 
 - **The search couldn't see points.** `Position.makeMove` doesn't bank capture points — that is

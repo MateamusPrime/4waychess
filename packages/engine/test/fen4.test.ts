@@ -6,6 +6,7 @@ import {
 } from '../src/fen4.ts';
 import { ARMIES, SQUARES, parseSquare, squareName, toOwn } from '../src/geometry.ts';
 import { TEAMS_RULES } from '../src/position.ts';
+import { generateLegal } from '../src/movegen.ts';
 import type { Army, PieceType } from '../src/types.ts';
 
 describe('FEN4 parsing', () => {
@@ -115,6 +116,30 @@ describe('FEN4 round-tripping', () => {
     const pos = parseFen4(OUR_START);
     assert.equal(pos.turn, 'red');
     assert.equal(serializeBoard(pos), OUR_START);
+  });
+
+  test('en passant rights survive a round-trip — a wire-transferred position must not lose moves', () => {
+    // A bot worker or server receives positions as FEN4. Before this field existed, the
+    // receiver silently lost every en passant capture: the right simply vanished in transit.
+    const pos = startingPosition();
+    const dbl = generateLegal(pos, 'red').find((m) => m.doubleStep === true);
+    assert.ok(dbl !== undefined);
+    pos.makeMove(dbl);
+    assert.equal(pos.ep.length, 1);
+
+    const back = parseFen4(serializeFen4(pos));
+    assert.equal(back.ep.length, 1);
+    assert.deepEqual(back.ep[0], pos.ep[0]);
+    assert.equal(serializeFen4(back), serializeFen4(pos));
+  });
+
+  test('legacy FEN4 strings without the en passant field still parse', () => {
+    const pos = startingPosition();
+    const modern = serializeFen4(pos);
+    const legacy = modern.replace('-x-', '-');
+    const back = parseFen4(legacy);
+    assert.deepEqual(back.ep, []);
+    assert.equal(serializeBoard(back), serializeBoard(pos));
   });
 
   test('promoted (1-point) queens survive a round-trip', () => {
