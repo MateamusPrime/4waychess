@@ -8,9 +8,10 @@
  *
  *   node src/tools/arena-cli.ts [games] [nodeBudget]
  *
- * Candidate: classic max-n with capture-rollout leaves. Incumbent: classic max-n with bare
- * leaves. Both use DEFAULT_WEIGHTS at the same budget — this isolates the leaf-resolution
- * variable, the one piece of the deep-search experiment the arena did not reject.
+ * As configured, `candidate` and `incumbent` below differ only in leaf resolution
+ * (capture-rollout vs bare eval) — the last of the three Lever-1 hypotheses, and like the
+ * other two it LOST (2.1% wins, 0.50x points). Swap the two pickers to test anything else;
+ * the harness cares only that both sides get the same budget and rotate through every seat.
  */
 
 import { ARMIES, FFA_RULES, Game } from '@4wc/engine';
@@ -25,16 +26,17 @@ const MAX_PLIES = 320;
 
 type Picker = (pos: Position, army: Army, seed: number) => Move | null;
 
-const classic: Picker = (pos, army, seed) => {
+/** The shipped configuration: classic max-n, bare leaves, everything spent on breadth. */
+const incumbent: Picker = (pos, army, seed) => {
   if (pos.turn !== army) return null;
-  // Depth 3 is classic's best use of this budget (it will bail on the cap anyway).
   return pickMove(pos, {
     depth: 3, nodeBudget: BUDGET, branchCap: 14, temperature: 0.4,
     weights: uniformWeights(), rng: makeRng(seed),
   }).move;
 };
 
-const deep: Picker = (pos, army, seed) => {
+/** Whatever is being tested this run. Edit freely; keep the budget identical. */
+const candidate: Picker = (pos, army, seed) => {
   if (pos.turn !== army) return null;
   return pickMove(pos, {
     depth: 3, nodeBudget: BUDGET, branchCap: 14, temperature: 0.4, rolloutPlies: 8,
@@ -49,9 +51,9 @@ interface Tally {
   rivalPoints: number;
 }
 
-const tally: Record<'deep' | 'classic', Tally> = {
-  deep: { games: 0, wins: 0, points: 0, rivalPoints: 0 },
-  classic: { games: 0, wins: 0, points: 0, rivalPoints: 0 },
+const tally: Record<'candidate' | 'incumbent', Tally> = {
+  candidate: { games: 0, wins: 0, points: 0, rivalPoints: 0 },
+  incumbent: { games: 0, wins: 0, points: 0, rivalPoints: 0 },
 };
 
 const started = process.hrtime.bigint();
@@ -66,7 +68,7 @@ for (let g = 0; g < GAMES; g++) {
   let plies = 0;
   while (!game.result().over && plies < MAX_PLIES) {
     const turn = game.pos.turn;
-    const picker = turn === candidateSeat ? deep : classic;
+    const picker = turn === candidateSeat ? candidate : incumbent;
     const move = picker(game.pos, turn, (baseSeed ^ (plies * 2654435761)) >>> 0);
     if (move === null) break;
     game.play(move);
@@ -82,37 +84,37 @@ for (let g = 0; g < GAMES; g++) {
   const rivalAvg = ARMIES.filter((a) => a !== candidateSeat)
     .reduce((s, a) => s + game.pos.points[a], 0) / 3;
 
-  tally.deep.games++;
-  tally.deep.points += candPts;
-  tally.deep.rivalPoints += rivalAvg;
-  if (winners.includes(candidateSeat)) tally.deep.wins++;
+  tally.candidate.games++;
+  tally.candidate.points += candPts;
+  tally.candidate.rivalPoints += rivalAvg;
+  if (winners.includes(candidateSeat)) tally.candidate.wins++;
 
-  tally.classic.games++;
-  tally.classic.points += rivalAvg;
-  tally.classic.rivalPoints += candPts;
-  if (winners.some((w) => w !== candidateSeat)) tally.classic.wins++;
+  tally.incumbent.games++;
+  tally.incumbent.points += rivalAvg;
+  tally.incumbent.rivalPoints += candPts;
+  if (winners.some((w) => w !== candidateSeat)) tally.incumbent.wins++;
 
   if ((g + 1) % 8 === 0) {
     const secs = Number(process.hrtime.bigint() - started) / 1e9;
     console.log(
-      `  game ${g + 1}/${GAMES}  deep wins ${tally.deep.wins}  ` +
-      `avg pts ${(tally.deep.points / tally.deep.games).toFixed(1)} vs ` +
-      `${(tally.deep.rivalPoints / tally.deep.games).toFixed(1)}  (${secs.toFixed(0)}s)`,
+      `  game ${g + 1}/${GAMES}  candidate wins ${tally.candidate.wins}  ` +
+      `avg pts ${(tally.candidate.points / tally.candidate.games).toFixed(1)} vs ` +
+      `${(tally.candidate.rivalPoints / tally.candidate.games).toFixed(1)}  (${secs.toFixed(0)}s)`,
     );
   }
 }
 
 const secs = Number(process.hrtime.bigint() - started) / 1e9;
-const d = tally.deep;
+const d = tally.candidate;
 console.log('');
-console.log(`arena: classic+rollout (candidate, 1 seat) vs classic-bare (3 seats), ${GAMES} games, budget ${BUDGET} nodes/move`);
+console.log(`arena: candidate (1 rotating seat) vs incumbent (3 seats), ${GAMES} games, budget ${BUDGET} nodes/move`);
 console.log(`elapsed            : ${secs.toFixed(0)}s  (${(totalPlies / secs).toFixed(0)} plies/s)`);
-console.log(`deep win rate      : ${(100 * d.wins / d.games).toFixed(1)}%   (seat-neutral baseline: 25%)`);
-console.log(`deep avg points    : ${(d.points / d.games).toFixed(2)}`);
-console.log(`classic avg points : ${(d.rivalPoints / d.games).toFixed(2)}   (per-seat average of the other three)`);
+console.log(`candidate win rate : ${(100 * d.wins / d.games).toFixed(1)}%   (seat-neutral baseline: 25%)`);
+console.log(`candidate avg pts  : ${(d.points / d.games).toFixed(2)}`);
+console.log(`incumbent avg pts  : ${(d.rivalPoints / d.games).toFixed(2)}   (per-seat average of the other three)`);
 const edge = d.points / Math.max(1, d.rivalPoints);
 console.log(`points ratio       : ${edge.toFixed(2)}x`);
 console.log('');
 console.log(d.wins / d.games > 0.25 && edge > 1
-  ? 'RESULT: deep outperforms classic at equal budget.'
+  ? 'RESULT: candidate outperforms the incumbent at equal budget.'
   : 'RESULT: no clear edge — do not ship without investigating.');

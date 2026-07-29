@@ -9,6 +9,7 @@
 
 import {
   ARMIES, FFA_RULES, Game, TEAMS_RULES, checkingArmies, formatMove, serializeFen4, squareName,
+  writePgn4,
 } from '@4wc/engine';
 import type { Army, Move, PieceType, Ruleset } from '@4wc/engine';
 import {
@@ -24,6 +25,8 @@ import { Canvas2DSurface, renderScene } from '@4wc/board-render';
 import { PIECE_FILL_RULE, PIECE_PATHS, PIECE_VIEWBOX } from '@4wc/pieces';
 import { PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign } from '@4wc/bots';
 import type { Bot, Difficulty, PersonalityId } from '@4wc/bots';
+import { localPersistence, storageKV } from '@4wc/store';
+import type { GameRecord, Profile, SeatRecord } from '@4wc/store';
 import { GameAudio } from './audio.ts';
 
 /* ------------------------------------------------------------------ *
@@ -42,8 +45,27 @@ const store = (() => {
   }
 })();
 
+/**
+ * Persistence: profile, settings and game history behind the @4wc/store ports.
+ *
+ * Guest-first (never gate the first game behind a form): a local guest identity is created on
+ * boot, and when accounts arrive the cloud adapter implements the same bundle — the account
+ * CLAIMS this guest id rather than replacing it, so pre-signup history survives signup.
+ * `storageKV` swallows storage failures, so private browsing degrades to a session-only
+ * profile instead of an exception.
+ */
+const persistence = localPersistence(storageKV(globalThis.localStorage ?? {
+  getItem: () => null, setItem: () => {}, removeItem: () => {},
+}), {
+  now: () => Date.now(),
+  random: () => Math.random(),
+});
+let profile: Profile | null = null;
+
 let settings: UserSettings = loadSettings(store);
 let game = Game.create(FFA_RULES);
+let gameStartedAtMs = Date.now();
+let gameSaved = false;
 let seat: Army = 'red';
 let interaction: InteractionState = INITIAL_INTERACTION;
 let anims: AnimState = NO_ANIMS;
@@ -267,6 +289,7 @@ function playMove(move: Move): void {
   rotateToTurn(now + (settings.reducedMotion ? 0 : DURATION.move + 60));
   announce(`${spoken}. ${describeTurn(game.pos, checked)}`);
   syncChrome();
+  saveFinishedGame();
   scheduleBot();
 }
 
@@ -325,6 +348,7 @@ function scheduleBot(): void {
       announce(`${turn} resigns.`);
       refreshChecked();
       syncChrome();
+      saveFinishedGame();
       if (game.result().over) audio.play('gameover');
       else scheduleBot();
       return;
@@ -356,6 +380,8 @@ function newGame(rules: Ruleset): void {
     botTimer = null;
   }
   game = Game.create(rules);
+  gameStartedAtMs = Date.now();
+  gameSaved = false;
   interaction = INITIAL_INTERACTION;
   anims = NO_ANIMS;
   checked = [];
@@ -374,6 +400,75 @@ function newGame(rules: Ruleset): void {
 }
 
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
+
+/* ------------------------------------------------------------------ *
+ * Persistence
+ * ------------------------------------------------------------------ */
+
+/**
+ * Save a finished game as replayable PGN4.
+ *
+ * The PGN4 carries ruleset id and engine version internally (RULES.md §15), so stored history
+ * stays replayable across rules changes and can be recomputed over later — which is what makes
+ * retroactive ratings, achievements and puzzle mining possible (RISKS.md R3, R18).
+ *
+ * Guarded by `gameSaved` because the end condition is observed from several paths (a move, a
+ * resignation, a bot's resignation) and double-saving would corrupt the history index.
+ */
+function saveFinishedGame(): void {
+  if (gameSaved || !game.result().over || profile === null) return;
+  gameSaved = true;
+
+  const seats: SeatRecord[] = ARMIES.map((a) => ({
+    army: a,
+    profileId: isHuman(a) ? profile!.id : null,
+    bot: isHuman(a) ? null : seatConfig[a],
+  }));
+
+  const record: GameRecord = {
+    id: `${gameStartedAtMs.toString(36)}-${Math.floor(Math.random() * 0xffffff).toString(36)}`,
+    mode: game.rules.mode,
+    seats,
+    pgn4: writePgn4(game, {
+      Event: 'Local hotseat',
+      ...Object.fromEntries(ARMIES.map((a) => [
+        cap(a), isHuman(a) ? profile!.name : `bot:${seatConfig[a]}:${botDifficulty}`,
+      ])),
+    }),
+    points: { ...game.pos.points },
+    winners: [...game.result().winners],
+    endReason: game.result().reason,
+    startedAtMs: gameStartedAtMs,
+    endedAtMs: Date.now(),
+  };
+
+  void persistence.games.save(record).then(refreshHistory);
+}
+
+function refreshHistory(): void {
+  void persistence.games.list(8).then((games) => {
+    const el2 = document.getElementById('history');
+    if (el2 === null) return;
+    if (games.length === 0) {
+      el2.innerHTML = '<div style="color:var(--muted);font-size:12px">No finished games yet.</div>';
+      return;
+    }
+    el2.innerHTML = games.map((g) => {
+      const you = g.seats.find((s) => s.profileId !== null)?.army;
+      const won = you !== undefined && g.winners.includes(you);
+      const when = new Date(g.endedAtMs).toLocaleDateString(undefined, {
+        month: 'short', day: 'numeric',
+      });
+      const label = g.winners.length === 0 ? 'draw' : g.winners.map(cap).join(' & ');
+      return `<div class="hrow">
+        <span class="hres ${won ? 'win' : ''}">${won ? 'WON' : label}</span>
+        <span class="hmode">${g.mode.toUpperCase()}</span>
+        <span class="hpts">${you !== undefined ? g.points[you] : '—'} pts</span>
+        <span class="hwhen">${when}</span>
+      </div>`;
+    }).join('');
+  });
+}
 
 /* ------------------------------------------------------------------ *
  * Promotion picker
@@ -576,7 +671,10 @@ function syncChrome(): void {
       ? { red: '#d55e00', blue: '#0072b2', yellow: '#f0e442', green: '#009e73' }[a]
       : theme().armies[a];
     const kind = seatConfig[a];
-    const label = kind === 'human' ? a : `${a} · ${PERSONALITIES[kind].name}`;
+    const who = kind === 'human'
+      ? (profile !== null && humanSeats().length === 1 ? profile.name : cap(a))
+      : PERSONALITIES[kind].name;
+    const label = kind === 'human' && humanSeats().length === 1 ? who : `${cap(a)} · ${who}`;
     return `<div class="pcard${turn ? ' turn' : ''}${active ? '' : ' dead'}${inCheck ? ' check' : ''}">
       <span class="chip" style="background:${color}"></span>
       <span class="name">${label}</span>
@@ -605,6 +703,10 @@ function syncChrome(): void {
     el('gameState').textContent = `${who} — ${r.reason}`;
   } else {
     el('gameState').textContent = `${cap(game.pos.turn)} to move${checked.length > 0 ? ` · in check: ${checked.join(', ')}` : ''}`;
+  }
+  const resignBtn = document.getElementById('resign') as HTMLButtonElement | null;
+  if (resignBtn !== null) {
+    resignBtn.disabled = r.over || !isHuman(game.pos.turn);
   }
 }
 
@@ -664,6 +766,60 @@ function buildChrome(): void {
 
   el('newFfa').addEventListener('click', () => newGame(FFA_RULES));
   el('newTeams').addEventListener('click', () => newGame(TEAMS_RULES));
+
+  /**
+   * Human resignation. Without this a losing player can only close the tab — and a game that
+   * is never finished is never saved, so it vanishes from history entirely. In FFA resigning
+   * keeps your banked points (RULES.md §12), so it is a real strategic choice rather than
+   * pure surrender; in Teams it hands your surviving pieces to your partner (§11).
+   */
+  el('resign').addEventListener('click', () => {
+    const turn = game.pos.turn;
+    if (game.result().over || !isHuman(turn)) return;
+    const partner = game.rules.mode === 'teams' ? ' Your pieces pass to your partner.' : '';
+    if (!window.confirm(`Resign as ${cap(turn)}? You keep your ${game.pos.points[turn]} points.${partner}`)) {
+      return;
+    }
+    game.resign(turn);
+    audio.play('eliminate');
+    banner(`${cap(turn)} resigns`);
+    announce(`${turn} resigns.`);
+    refreshChecked();
+    syncChrome();
+    saveFinishedGame();
+    if (game.result().over) audio.play('gameover');
+    else scheduleBot();
+  });
+
+  const nameInput = document.getElementById('playerName') as HTMLInputElement;
+  const commitName = (): void => {
+    void persistence.profiles.rename(nameInput.value).then((p) => {
+      profile = p;
+      nameInput.value = p.name;
+      syncChrome();
+    });
+  };
+  el('saveName').addEventListener('click', commitName);
+  nameInput.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') commitName();
+  });
+}
+
+/** Load the guest profile and history. Async, so the board is playable before it resolves. */
+function bootPersistence(): void {
+  void persistence.profiles.ensureGuest().then((p) => {
+    profile = p;
+    const input = document.getElementById('playerName') as HTMLInputElement | null;
+    if (input !== null) input.value = p.name;
+    const note = document.getElementById('guestNote');
+    if (note !== null) {
+      note.textContent = p.guest
+        ? 'Playing as a guest — your games are saved on this device.'
+        : `Signed in as ${p.name}.`;
+    }
+    syncChrome();
+  });
+  refreshHistory();
 }
 
 /* ------------------------------------------------------------------ *
@@ -680,6 +836,7 @@ resize();
 rebuildBots();
 refreshChecked();
 syncChrome();
+bootPersistence();
 announce('Four-way chess. Red to move.');
 scheduleBot();
 
@@ -723,6 +880,7 @@ requestAnimationFrame(loop);
       game.resign(turn);
       refreshChecked();
       syncChrome();
+      saveFinishedGame();
       frame(performance.now());
       return `resigned:${turn}`;
     }

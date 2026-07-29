@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@4wc/board-render": "*",
+    "@4wc/bots": "*",
     "@4wc/engine": "*",
     "@4wc/pieces": "*",
+    "@4wc/store": "*",
     "@4wc/ui-core": "*"
   },
   "devDependencies": {

@@ -1,8 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_SETTINGS } from '@4wc/ui-core';
-import { localPersistence, memoryKV } from '../src/local.ts';
-import type { KV } from '../src/local.ts';
+import { localPersistence, memoryKV, storageKV } from '../src/local.ts';
+import type { KV, StorageLike } from '../src/local.ts';
 import type { GameRecord } from '../src/ports.ts';
 
 function fixture(over: Partial<{ now: number; kv: KV; maxGames: number }> = {}) {
@@ -83,6 +83,39 @@ describe('settings sync', () => {
     const kv2 = memoryKV({ '4wc.settings.v1': JSON.stringify({ themeId: 'nonsense' }) });
     const { p: p2 } = fixture({ kv: kv2 });
     assert.equal((await p2.settings.load())?.themeId, 'midnight');
+  });
+});
+
+describe('storage adapter survives hostile browsers', () => {
+  test('round-trips through a working Storage', async () => {
+    const map = new Map<string, string>();
+    const storage: StorageLike = {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => { map.set(k, v); },
+      removeItem: (k) => { map.delete(k); },
+    };
+    const { p } = fixture({ kv: storageKV(storage) });
+    const guest = await p.profiles.ensureGuest();
+    assert.equal((await p.profiles.current())?.id, guest.id);
+    assert.ok(map.size > 0, 'it really wrote to the backing store');
+  });
+
+  test('a Storage that throws on every call degrades to "not stored", never to a crash', async () => {
+    // Private browsing, exhausted quota and enterprise lockdown all present this way. Losing
+    // a saved game is regrettable; losing the running game to an exception is not.
+    const hostile: StorageLike = {
+      getItem() { throw new Error('SecurityError'); },
+      setItem() { throw new Error('QuotaExceededError'); },
+      removeItem() { throw new Error('SecurityError'); },
+    };
+    const { p } = fixture({ kv: storageKV(hostile) });
+    await assert.doesNotReject(async () => {
+      const guest = await p.profiles.ensureGuest();
+      assert.ok(guest.id.length > 0, 'still gets a usable in-session identity');
+      await p.games.save(record('g1', 100));
+      assert.deepEqual(await p.games.list(), []);
+      assert.equal(await p.settings.load(), null);
+    });
   });
 });
 

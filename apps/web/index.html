@@ -68,10 +68,29 @@
     padding: 7px 12px; cursor: pointer; font-weight: 600;
   }
   button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .35; cursor: default; }
+  button:disabled:hover { border-color: var(--panel-brd); }
   button.primary { background: var(--accent); color: #14181f; border-color: var(--accent); font-weight: 800; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .setting { display: flex; justify-content: space-between; align-items: center;
              padding: 5px 0; gap: 8px; font-size: 13px; }
+  input[type="text"] {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--panel-brd); border-radius: 8px; padding: 7px 10px;
+  }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+  /* Recent games */
+  .hrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px;
+          border-bottom: 1px solid var(--panel-brd); }
+  .hrow:last-child { border-bottom: none; }
+  .hres { font-weight: 800; font-size: 10px; letter-spacing: .06em; min-width: 46px;
+          color: var(--muted); text-transform: uppercase; }
+  .hres.win { color: var(--accent); }
+  .hmode { color: var(--muted); font-size: 10px; }
+  .hpts { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
+  .hwhen { color: var(--muted); min-width: 44px; text-align: right; }
+
   .seatrow { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
   .seatrow .chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
   .seatrow label { flex: 1; text-transform: capitalize; }
@@ -125,7 +144,17 @@
         <div class="row">
           <button class="primary" id="newFfa">New FFA</button>
           <button id="newTeams">New Teams</button>
+          <button id="resign" title="Resign the seat on move">Resign</button>
         </div>
+      </div>
+      <div class="panel">
+        <h3>You</h3>
+        <div class="row" style="gap:6px">
+          <input id="playerName" type="text" maxlength="40" aria-label="Your display name"
+                 placeholder="Your name" style="flex:1;min-width:0">
+          <button id="saveName">Save</button>
+        </div>
+        <div class="sub" id="guestNote" style="margin:6px 0 0"></div>
       </div>
       <div class="panel">
         <h3>Players</h3>
@@ -165,6 +194,10 @@
       <div class="panel">
         <h3>Theme</h3>
         <div class="seg" id="themeSeg" role="group" aria-label="Theme"></div>
+      </div>
+      <div class="panel">
+        <h3>Recent games</h3>
+        <div id="history"></div>
       </div>
       <div class="panel">
         <h3>Settings</h3>

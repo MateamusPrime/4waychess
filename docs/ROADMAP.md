@@ -230,18 +230,48 @@ budgets, and eventually Lever 3 (learned eval over the Phase-3 game corpus).
 
 ---
 
-## Phase 3 — Accounts and persistence
+## Phase 3 — Accounts and persistence  ▸ *local half complete*
 
 **Goal:** identity, saved games, and the substrate for everything in Phase 6.
 
-- Auth (per **D4**), including **guest play before signup** — never gate the first game behind a form.
-- Profiles, settings sync (themes move server-side here), game history.
-- Game storage with ruleset id + engine version per game. (R18)
-- **Design the rating model now even though it ships in Phase 6**, and store enough per-game detail to
-  recompute ratings retroactively. (R3)
-- Cross-device resume requires live state server-side and keyed by account.
+- [x] `packages/store` — persistence **ports** (profiles, settings sync, game history) plus the
+      local adapter. The app depends only on the ports, so the cloud backend decision stays
+      reversible until the adapter is written.
+- [x] **Guest play before signup**: a guest identity is created on boot with a readable name
+      (never `User4711`), renameable, and persisted. When accounts land, the cloud adapter
+      implements the same bundle and the account **claims** the guest id rather than replacing
+      it — so pre-signup history survives signup. Designed now because it is free now and a
+      data-loss incident later.
+- [x] Game history: every finished game stored as replayable PGN4 under a queryable envelope
+      (mode, seats with human/bot identity, points, winners, end reason, timestamps), with
+      eviction, orphan tolerance, and a "Recent games" panel.
+- [x] Human **resignation** — found missing while testing the save path: without it a losing
+      player could only close the tab, and an unfinished game is never saved.
+- [x] Hostile-storage handling: private browsing, exhausted quota and disabled storage all
+      degrade to a session-only profile rather than an exception.
+- [ ] Auth provider (**D4**) and the cloud adapter (**D5**).
+- [ ] **Design the rating model** — ships in Phase 6, but the model must be chosen before there
+      is live rating data, and per-game detail must already be stored to allow retroactive
+      recomputation. (R3)
+- [ ] Cross-device resume: live state server-side, keyed by account.
 
 **Gate:** a player signs up, plays on two devices, and their history and settings follow them.
+
+### What building it taught us
+
+- **A stored game is only worth storing if it replays.** The integration test does not check
+  that a record round-trips as JSON — it replays the movetext through the engine and demands
+  the identical final position, points and army statuses. Everything Phase 6 promises is
+  replay over history, so that is the property with real value.
+- **ui-core and store share one settings key and payload format on purpose** — the synchronous
+  path exists because the first paint needs settings before any promise resolves, and the
+  async port exists for the cloud adapter. They agree so the adapter can upload settings the
+  app already wrote, with no migration. That agreement is invisible in both codebases, so a
+  cross-package contract test pins it.
+- Verified live end to end: a 72-round game saved with status
+  `resigned,checkmated,active,resigned` (human resigned, one bot mated, one bot conceded,
+  Yellow won on 69 points), player tags `Mateamus` and `bot:aggressive:medium`, all surviving
+  a page reload.
 
 ---
 

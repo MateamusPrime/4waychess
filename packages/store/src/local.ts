@@ -37,6 +37,46 @@ export function memoryKV(initial: Record<string, string> = {}): KV {
   };
 }
 
+/** The synchronous Storage shape, declared locally so this package needs no DOM lib. */
+export interface StorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+/**
+ * KV over a synchronous Storage (localStorage on web, an AsyncStorage shim on mobile).
+ *
+ * Every operation is wrapped: private browsing throws on write, quota can be exhausted, and
+ * enterprise policy can disable storage entirely. Losing a saved game is regrettable; losing
+ * the running game to an exception is not acceptable — so failures degrade to "not stored".
+ */
+export function storageKV(storage: StorageLike): KV {
+  return {
+    async get(k) {
+      try {
+        return storage.getItem(k);
+      } catch {
+        return null;
+      }
+    },
+    async set(k, v) {
+      try {
+        storage.setItem(k, v);
+      } catch {
+        /* quota exceeded or storage disabled — the app must keep playing */
+      }
+    },
+    async del(k) {
+      try {
+        storage.removeItem(k);
+      } catch {
+        /* same */
+      }
+    },
+  };
+}
+
 const PROFILE_KEY = '4wc.profile.v1';
 const SETTINGS_KEY = '4wc.settings.v1';
 const INDEX_KEY = '4wc.games.index.v1';

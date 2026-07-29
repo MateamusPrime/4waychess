@@ -11,5 +11,5 @@ export type {
   SettingsSync,
 } from './ports.ts';
 
-export type { KV, LocalOptions } from './local.ts';
-export { localPersistence, memoryKV } from './local.ts';
+export type { KV, LocalOptions, StorageLike } from './local.ts';
+export { localPersistence, memoryKV, storageKV } from './local.ts';
