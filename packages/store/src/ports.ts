@@ -12,7 +12,7 @@
  * state, not an error.
  */
 
-import type { Army, Mode } from '@4wc/engine';
+import type { Army, ArmyStatus, Mode } from '@4wc/engine';
 import type { UserSettings } from '@4wc/ui-core';
 
 /** Who is playing. Guests get a real id — signup later CLAIMS it, never discards it. */
@@ -32,6 +32,16 @@ export interface SeatRecord {
   profileId: string | null;
   /** Bot personality id, null for humans. */
   bot: string | null;
+  /**
+   * How the seat finished.
+   *
+   * Denormalised out of the PGN4 deliberately. Rating draws a hard line between RESIGNING (a
+   * legal strategic act that keeps your points and your place) and TIMING OUT (abandonment,
+   * which ranks last so that rage-quitting can never be a rating strategy). Recomputing the
+   * whole ladder must not require parsing every stored game's movetext to recover a
+   * distinction this load-bearing (RISKS.md R3).
+   */
+  status: ArmyStatus;
 }
 
 /**

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@4wc/engine": "*",
+    "@4wc/rating": "*",
     "@4wc/ui-core": "*"
   }
 }

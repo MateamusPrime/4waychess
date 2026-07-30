@@ -250,9 +250,16 @@ budgets, and eventually Lever 3 (learned eval over the Phase-3 game corpus).
 - [x] Hostile-storage handling: private browsing, exhausted quota and disabled storage all
       degrade to a session-only profile rather than an exception.
 - [ ] Auth provider (**D4**) and the cloud adapter (**D5**).
-- [ ] **Design the rating model** — ships in Phase 6, but the model must be chosen before there
-      is live rating data, and per-game detail must already be stored to allow retroactive
-      recomputation. (R3)
+- [x] **Rating model designed and implemented** — `packages/rating`, documented in
+      `docs/RATING.md`. Weng-Lin Bayesian approximation (closed form, no dependencies),
+      chosen over Elo because Elo is pairwise and over TrueSkill because closed form is
+      auditable and trivially deterministic. Ships in Phase 6; built now because the model
+      must be fixed before live data exists to invalidate. (R3)
+- [x] Anti-farming rules, each with a named test: all-human games only, rank by points not
+      survival, margin ignored, abandonment ranks last while resignation does not, and a
+      conservative μ − 3σ leaderboard that a lucky newcomer cannot leap.
+- [x] Retroactive recomputation proven end to end — `recomputeLadder()` rebuilds the whole
+      ladder from stored records, order-independently and byte-identically.
 - [ ] Cross-device resume: live state server-side, keyed by account.
 
 **Gate:** a player signs up, plays on two devices, and their history and settings follow them.

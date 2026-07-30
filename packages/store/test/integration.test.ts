@@ -43,6 +43,7 @@ function toRecord(g: Game, id: string): GameRecord {
       army: a,
       profileId: a === 'red' ? 'guest-1' : null,
       bot: a === 'red' ? null : 'opportunist',
+      status: g.pos.status[a],
     })),
     pgn4: writePgn4(g, { Event: 'Integration' }),
     points: { ...g.pos.points },

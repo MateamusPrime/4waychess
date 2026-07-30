@@ -1,0 +1,16 @@
+{
+  "name": "@4wc/rating",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multiplayer-native skill rating. Pure, deterministic, retroactively recomputable.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@4wc/engine": "*"
+  }
+}

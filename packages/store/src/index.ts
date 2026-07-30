@@ -13,3 +13,5 @@ export type {
 
 export type { KV, LocalOptions, StorageLike } from './local.ts';
 export { localPersistence, memoryKV, storageKV } from './local.ts';
+
+export { outcomeFromRecord, recomputeLadder } from './rating-bridge.ts';

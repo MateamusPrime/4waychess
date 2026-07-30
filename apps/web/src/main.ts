@@ -423,6 +423,7 @@ function saveFinishedGame(): void {
     army: a,
     profileId: isHuman(a) ? profile!.id : null,
     bot: isHuman(a) ? null : seatConfig[a],
+    status: game.pos.status[a],
   }));
 
   const record: GameRecord = {
