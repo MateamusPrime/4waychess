@@ -218,6 +218,30 @@ Two implementation bugs worth remembering:
   advantage. Both evaporated at 80 games. **Small samples in this game produce confident
   nonsense**, which is precisely why the calibration mode now exists.
 
+**Lever 2 verdict: INCONCLUSIVE. Not shipped.** SPSA ran 1,600 games and proposed modest
+changes (less centre, more pawn advancement, slightly more caution about hanging pieces —
+directionally plausible for a game where 8th-rank promotion mints cheap queens). Validated
+against the incumbent over 120 games at equal budget:
+
+```
+mean differential : +0.45 ± 2.87 (SEM)
+t statistic       : 0.16
+RESULT: INCONCLUSIVE — the difference is within noise. Do not ship.
+```
+
+The 95% interval is roughly [−5, +6] points, so the honest reading is that the hand-guessed
+weights were **already within a few points of anything SPSA could find at this budget**.
+Settling it properly would need ~4,000 validation games (~8 hours) on top of a much longer
+tuning run.
+
+**The measurement design is the bottleneck, not the compute.** Variance here is dominated by
+game-to-game randomness: every game starts from the same position and diverges through softmax
+temperature. Chess-engine practice solves exactly this with a fixed **opening suite** — a set
+of distinct starting positions played deterministically (temperature 0), with the candidate
+rotated through every seat. That removes RNG noise entirely and leaves only position-to-position
+variance, typically cutting the games needed by an order of magnitude. That is the right next
+step for anyone resuming bot work, and it should come *before* more tuning compute.
+
 Remaining strength levers: larger worker budgets (the worker means bot thinking no longer
 competes with the UI thread), and eventually Lever 3 (learned eval over the game corpus that
 Phase 3 persistence is now accumulating).
