@@ -195,9 +195,32 @@ Smaller findings: replyCap is the BRS affordability lever (depth-2 at the openin
 nodes at cap 24, ~10k at cap 5); a saturated-budget A/B proves nothing (both runs stop at the
 cap — comparisons must complete); block-buffered background runs must not share a log file.
 
-Strength path forward, in order: **Lever 2** (self-play weight tuning on the arena skeleton —
-the eval weights are hand-guesses and the one axis nothing has yet optimised), larger worker
-budgets, and eventually Lever 3 (learned eval over the Phase-3 game corpus).
+### Lever 2 — self-play weight tuning
+
+- [x] `tune-cli.ts`: SPSA over the eval weights, with `points` pinned at 1.0 as the unit of
+      account (the eval is scale-invariant for move selection, so tuning every weight together
+      would let the vector random-walk in magnitude while learning nothing).
+- [x] `--null` calibration: plays IDENTICAL weights against themselves to measure the
+      harness's own bias and noise before any result is trusted.
+- [x] The arena now reports a standard error and a t statistic, and refuses to call a result
+      either way when |t| ≤ 2.
+
+**The finding that governs all future bot work: this game is extremely noisy.** Null
+calibration over 80 games shows no significant harness bias (|mean|/SEM = 0.87, seat-pair bias
+1.0 points) but a per-game standard deviation of **38.6 points**. Detecting a 5-point
+improvement needs ~240 games; a 2-point improvement needs ~1,500.
+
+Two implementation bugs worth remembering:
+- Textbook SPSA gains drove `kingSafety` from 0.35 to 9.56 in two iterations, because the
+  objective is in points (tens) while the weights are order 0.1–1. Fixed with objective
+  normalisation plus a hard per-iteration step cap.
+- An early 6-game null sample suggested a large structural bias (+22) and a Red+Yellow seat
+  advantage. Both evaporated at 80 games. **Small samples in this game produce confident
+  nonsense**, which is precisely why the calibration mode now exists.
+
+Remaining strength levers: larger worker budgets (the worker means bot thinking no longer
+competes with the UI thread), and eventually Lever 3 (learned eval over the game corpus that
+Phase 3 persistence is now accumulating).
 
 ### What building it taught us
 

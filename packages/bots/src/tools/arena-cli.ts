@@ -16,9 +16,35 @@
 
 import { ARMIES, FFA_RULES, Game } from '@4wc/engine';
 import type { Army, Move, Position } from '@4wc/engine';
-import { uniformWeights } from '../eval.ts';
+import { DEFAULT_WEIGHTS, uniformWeights } from '../eval.ts';
+import type { EvalWeights, WeightsByArmy } from '../eval.ts';
 import { pickMove } from '../search.ts';
 import { makeRng } from '../rng.ts';
+
+/**
+ * Weights proposed by `tune-cli.ts` (SPSA, 1600 games). Used when `--tuned` is passed, so a
+ * tuning proposal can be validated the same way every search change is: against the incumbent,
+ * at an identical budget, seats rotated.
+ */
+const TUNED_WEIGHTS: EvalWeights = {
+  ...DEFAULT_WEIGHTS,
+  points: 1,
+  material: 0.844,
+  center: 0.013,
+  pawnAdvance: 0.088,
+  kingSafety: 0.372,
+  aggression: 0.124,
+  hanging: 1.136,
+};
+
+const USE_TUNED = process.argv.includes('--tuned');
+
+/** Give one seat the candidate weights; everyone else keeps the shipped defaults. */
+const seatWeights = (self: EvalWeights, army: Army): WeightsByArmy => {
+  const table = {} as Record<Army, EvalWeights>;
+  for (const a of ARMIES) table[a] = a === army ? self : DEFAULT_WEIGHTS;
+  return table;
+};
 
 const GAMES = Number(process.argv[2] ?? 48);
 const BUDGET = Number(process.argv[3] ?? 2_500);
@@ -39,8 +65,10 @@ const incumbent: Picker = (pos, army, seed) => {
 const candidate: Picker = (pos, army, seed) => {
   if (pos.turn !== army) return null;
   return pickMove(pos, {
-    depth: 3, nodeBudget: BUDGET, branchCap: 14, temperature: 0.4, rolloutPlies: 8,
-    weights: uniformWeights(), rng: makeRng(seed),
+    depth: 3, nodeBudget: BUDGET, branchCap: 14, temperature: 0.4,
+    ...(USE_TUNED ? {} : { rolloutPlies: 8 }),
+    weights: USE_TUNED ? seatWeights(TUNED_WEIGHTS, army) : uniformWeights(),
+    rng: makeRng(seed),
   }).move;
 };
 
@@ -58,6 +86,8 @@ const tally: Record<'candidate' | 'incumbent', Tally> = {
 
 const started = process.hrtime.bigint();
 let totalPlies = 0;
+/** Per-game (candidate − incumbent-average) differentials, for the significance test. */
+const diffs: number[] = [];
 
 for (let g = 0; g < GAMES; g++) {
   // Rotate the candidate through every seat; the other three run the incumbent.
@@ -84,6 +114,7 @@ for (let g = 0; g < GAMES; g++) {
   const rivalAvg = ARMIES.filter((a) => a !== candidateSeat)
     .reduce((s, a) => s + game.pos.points[a], 0) / 3;
 
+  diffs.push(candPts - rivalAvg);
   tally.candidate.games++;
   tally.candidate.points += candPts;
   tally.candidate.rivalPoints += rivalAvg;
@@ -114,7 +145,23 @@ console.log(`candidate avg pts  : ${(d.points / d.games).toFixed(2)}`);
 console.log(`incumbent avg pts  : ${(d.rivalPoints / d.games).toFixed(2)}   (per-seat average of the other three)`);
 const edge = d.points / Math.max(1, d.rivalPoints);
 console.log(`points ratio       : ${edge.toFixed(2)}x`);
+
+// Significance. Per-game noise in this game is enormous (see tune-cli --null: sd ~38 points),
+// so a raw points difference means nothing without an error bar. Reporting one is what keeps
+// a lucky run from being mistaken for an improvement.
+const n = diffs.length;
+const mean = diffs.reduce((a, b) => a + b, 0) / Math.max(1, n);
+const sd = Math.sqrt(diffs.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, n - 1));
+const sem = sd / Math.sqrt(Math.max(1, n));
+const t = mean / Math.max(1e-9, sem);
+console.log(`mean differential  : ${mean >= 0 ? '+' : ''}${mean.toFixed(2)} ± ${sem.toFixed(2)} (SEM)`);
+console.log(`t statistic        : ${t.toFixed(2)}   (|t| > 2 ≈ significant at this sample size)`);
 console.log('');
-console.log(d.wins / d.games > 0.25 && edge > 1
-  ? 'RESULT: candidate outperforms the incumbent at equal budget.'
-  : 'RESULT: no clear edge — do not ship without investigating.');
+if (Math.abs(t) <= 2) {
+  console.log('RESULT: INCONCLUSIVE — the difference is within noise. Do not ship.');
+  console.log(`        To resolve, run ~${Math.ceil((2 * sd / Math.max(1, Math.abs(mean))) ** 2)} games.`);
+} else if (t > 2) {
+  console.log('RESULT: candidate significantly outperforms the incumbent at equal budget.');
+} else {
+  console.log('RESULT: candidate is significantly WORSE. Reject.');
+}
