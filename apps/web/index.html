@@ -130,6 +130,24 @@
 
   #zoomhint { position: absolute; right: 10px; bottom: 10px; font-size: 11px;
               color: var(--muted); pointer-events: none; }
+
+  /* Replay bar */
+  #replayBar {
+    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    display: none; align-items: center; gap: 6px; padding: 7px 10px;
+    background: color-mix(in srgb, var(--page) 82%, black);
+    border: 1px solid var(--panel-brd); border-radius: 99px; white-space: nowrap;
+  }
+  #replayBar.open { display: flex; }
+  #replayBar button { padding: 4px 9px; font-size: 12px; line-height: 1; }
+  #rTitle { font-size: 11px; color: var(--muted); margin-right: 4px; }
+  #rPly { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+          min-width: 62px; text-align: right; }
+
+  button.hrow { width: 100%; text-align: left; background: transparent; border: none;
+                border-bottom: 1px solid var(--panel-brd); border-radius: 0; padding: 4px 2px;
+                font-weight: 400; cursor: pointer; }
+  button.hrow:hover { background: var(--panel); border-color: var(--panel-brd); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   h1 { font-size: 19px; letter-spacing: -.02em; margin-bottom: 2px; }
   .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
@@ -183,6 +201,16 @@
       <div id="banner" role="status"></div>
       <div id="promo"><div class="box"><p>Promote to</p><div id="promoOpts" class="row"></div></div></div>
       <div id="zoomhint"></div>
+      <div id="replayBar">
+        <button id="rClose" title="Back to the live game">✕</button>
+        <span id="rTitle"></span>
+        <button id="rStart" title="Start">⏮</button>
+        <button id="rPrev" title="Previous move">◀</button>
+        <button id="rPlay" title="Play / pause">▶</button>
+        <button id="rNext" title="Next move">▶|</button>
+        <button id="rEnd" title="End">⏭</button>
+        <span id="rPly"></span>
+      </div>
       <div class="sr" aria-live="polite" id="announcer"></div>
     </main>
 

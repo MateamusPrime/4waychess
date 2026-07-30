@@ -187,6 +187,49 @@ describe('PGN4 documents', () => {
     assert.equal(body[0].split(' .. ').length, 4);
   });
 
+  test('REGRESSION: a game containing a resignation replays exactly', () => {
+    // Retirements are not moves, so they left no trace in the movetext and every game with a
+    // resignation desynced on replay — the reader kept expecting the retired army to take
+    // turns. Random-play fixtures never resign, which is why the suite missed it; a real
+    // saved game found it the moment the replay viewer tried to open one.
+    const g = randomGame(8);
+    g.resign('red');
+    for (let i = 0; i < 9 && !g.result().over; i++) {
+      const ms = g.legalMoves();
+      if (ms.length === 0) break;
+      g.play(ms[0]);
+    }
+
+    const pgn = writePgn4(g);
+    assert.match(pgn, /\[Retirements "red:resigned@8"\]/);
+
+    const { game: back } = readPgn4(pgn);
+    assert.equal(back.moves.length, g.moves.length, 'same move count');
+    assert.equal(serializeFen4(back.pos), serializeFen4(g.pos), 'same final position');
+    assert.deepEqual(back.pos.status, g.pos.status, 'and the same army statuses');
+    assert.deepEqual(back.pos.points, g.pos.points);
+  });
+
+  test('multiple retirements, including a timeout, all replay at the right ply', () => {
+    const g = randomGame(4);
+    g.resign('blue');
+    for (let i = 0; i < 6 && !g.result().over; i++) {
+      const ms = g.legalMoves();
+      if (ms.length === 0) break;
+      g.play(ms[0]);
+    }
+    if (!g.result().over) g.timeout('green');
+
+    const { game: back } = readPgn4(writePgn4(g));
+    assert.equal(back.pos.status.blue, 'resigned');
+    assert.equal(back.pos.status.green, g.pos.status.green);
+    assert.equal(serializeFen4(back.pos), serializeFen4(g.pos));
+  });
+
+  test('a game with no retirements omits the tag entirely', () => {
+    assert.equal(writePgn4(randomGame(8)).includes('Retirements'), false);
+  });
+
   test('an illegal move in the movetext is rejected loudly, not silently skipped', () => {
     const pgn = writePgn4(randomGame(8)).replace(/^1\. \S+/m, '1. g2-g9');
     assert.throws(() => readPgn4(pgn), /not a legal move/);

@@ -19,8 +19,9 @@ import {
   observeMove, prune, rotationSteps, saveSettings, tapSquare, zoomForComfortableTouch,
 } from '@4wc/ui-core';
 import type {
-  AnimState, Camera, InteractionContext, InteractionState, Step, UserSettings,
+  AnimState, Camera, InteractionContext, InteractionState, ReplayState, Step, UserSettings,
 } from '@4wc/ui-core';
+import { atEnd, atStart, loadReplay, seek, step as replayStep, toEnd, toStart } from '@4wc/ui-core';
 import { Canvas2DSurface, renderScene } from '@4wc/board-render';
 import { PIECE_FILL_RULE, PIECE_PATHS, PIECE_VIEWBOX } from '@4wc/pieces';
 import { PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign } from '@4wc/bots';
@@ -61,6 +62,14 @@ const persistence = localPersistence(storageKV(globalThis.localStorage ?? {
   random: () => Math.random(),
 });
 let profile: Profile | null = null;
+
+/**
+ * Replay mode. When set, the board renders a stored game instead of the live one and every
+ * seat is view-only — the same InteractionContext machinery that already handles spectating,
+ * so no new input path was needed.
+ */
+let replay: ReplayState | null = null;
+let replayTitle = '';
 
 let settings: UserSettings = loadSettings(store);
 let game = Game.create(FFA_RULES);
@@ -154,6 +163,9 @@ function layout() {
 }
 
 function ictx(): InteractionContext {
+  // In replay the board shows a stored position and nothing is playable — reusing the
+  // existing view-only path rather than inventing a second input mode.
+  if (replay !== null) return { position: replay.position, seat, controllable: [] };
   // Only human seats are tappable; bot armies move themselves.
   return { position: game.pos, seat, controllable: game.result().over ? [] : humanSeats() };
 }
@@ -194,12 +206,14 @@ function frame(now: number): void {
     ctx: ictx(),
     layout: layout(),
     theme: theme(),
-    interaction,
+    interaction: replay === null
+      ? interaction
+      : { ...INITIAL_INTERACTION, lastMove: replay.lastMove },
     anims,
     now,
     colorblind: settings.colorblind,
     showCoords: settings.showCoords,
-    checked,
+    checked: replay === null ? checked : [],
   });
   renderScene(surface, scene, viewport(), { markers: settings.colorblind });
 }
@@ -446,6 +460,82 @@ function saveFinishedGame(): void {
   void persistence.games.save(record).then(refreshHistory);
 }
 
+/* ------------------------------------------------------------------ *
+ * Replay
+ * ------------------------------------------------------------------ */
+
+/** Open a stored game on the board. Cancels any pending bot turn from the live game. */
+function openReplay(id: string): void {
+  void persistence.games.get(id).then((rec) => {
+    if (rec === null) return;
+    if (botTimer !== null) {
+      window.clearTimeout(botTimer);
+      botTimer = null;
+    }
+    stopAutoplay();
+    try {
+      replay = loadReplay(rec.pgn4);
+    } catch {
+      banner('That game could not be replayed');
+      return;
+    }
+    // View the replay from the seat the human actually occupied, so it reads the way it was
+    // played rather than always from Red's chair.
+    const mine = rec.seats.find((s) => s.profileId !== null);
+    seat = mine?.army ?? 'red';
+    const label = rec.winners.length === 0 ? 'Draw' : `${rec.winners.map(cap).join(' & ')} won`;
+    replayTitle = `${rec.mode.toUpperCase()} — ${label} — ${rec.endReason}`;
+    camera = { zoom: 1, panX: 0, panY: 0 };
+    anims = NO_ANIMS;
+    syncChrome();
+    announce(`Replaying a stored game. ${label}. ${replay.moves.length} moves.`);
+  });
+}
+
+function closeReplay(): void {
+  stopAutoplay();
+  replay = null;
+  replayTitle = '';
+  seat = humanSeats()[0] ?? 'red';
+  syncChrome();
+  scheduleBot();
+}
+
+/**
+ * Autoplay. Stops itself at the end rather than looping, because a replay that silently
+ * restarts makes it impossible to tell "finished" from "still going".
+ */
+let autoplayTimer: number | null = null;
+
+function toggleAutoplay(): void {
+  if (autoplayTimer !== null) {
+    stopAutoplay();
+    return;
+  }
+  if (replay === null || atEnd(replay)) return;
+  el('rPlay').textContent = '❚❚';
+  autoplayTimer = window.setInterval(() => {
+    if (replay === null || atEnd(replay)) {
+      stopAutoplay();
+      return;
+    }
+    replaySeek((r) => replayStep(r, 1));
+  }, settings.reducedMotion ? 250 : 650);
+}
+
+function stopAutoplay(): void {
+  if (autoplayTimer !== null) window.clearInterval(autoplayTimer);
+  autoplayTimer = null;
+  el('rPlay').textContent = '▶';
+}
+
+function replaySeek(fn: (r: ReplayState) => ReplayState): void {
+  if (replay === null) return;
+  replay = fn(replay);
+  audio.play('move');
+  syncChrome();
+}
+
 function refreshHistory(): void {
   void persistence.games.list(8).then((games) => {
     const el2 = document.getElementById('history');
@@ -461,13 +551,19 @@ function refreshHistory(): void {
         month: 'short', day: 'numeric',
       });
       const label = g.winners.length === 0 ? 'draw' : g.winners.map(cap).join(' & ');
-      return `<div class="hrow">
+      return `<button class="hrow" data-game="${g.id}" title="Replay this game">
         <span class="hres ${won ? 'win' : ''}">${won ? 'WON' : label}</span>
         <span class="hmode">${g.mode.toUpperCase()}</span>
         <span class="hpts">${you !== undefined ? g.points[you] : '—'} pts</span>
         <span class="hwhen">${when}</span>
-      </div>`;
+      </button>`;
     }).join('');
+    for (const row of el2.querySelectorAll('.hrow')) {
+      row.addEventListener('click', () => {
+        const id = (row as HTMLElement).dataset.game;
+        if (id !== undefined) openReplay(id);
+      });
+    }
   });
 }
 
@@ -626,6 +722,16 @@ canvas.addEventListener('keydown', (e) => {
   const dirs: Record<string, 'up' | 'down' | 'left' | 'right'> = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
   };
+  if (replay !== null) {
+    // In replay the arrows scrub the timeline; a board cursor would have nothing to act on.
+    if (e.key === 'ArrowLeft') { e.preventDefault(); replaySeek((r) => replayStep(r, -1)); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); replaySeek((r) => replayStep(r, 1)); }
+    else if (e.key === 'Home') { e.preventDefault(); replaySeek(toStart); }
+    else if (e.key === 'End') { e.preventDefault(); replaySeek(toEnd); }
+    else if (e.key === ' ') { e.preventDefault(); toggleAutoplay(); }
+    else if (e.key === 'Escape') closeReplay();
+    return;
+  }
   if (e.key in dirs) {
     e.preventDefault();
     const from = interaction.cursor >= 0 ? interaction.cursor : defaultCursor(game.pos, seat);
@@ -663,11 +769,14 @@ function applyTheme(): void {
 
 function syncChrome(): void {
   // Player cards. Bots show their personality name so the table reads as four characters.
+  const shown = replay !== null ? replay.position : game.pos;
   const cards = ARMIES.map((a) => {
-    const active = game.pos.isActive(a);
-    const turn = !game.result().over && game.pos.turn === a && active;
+    const active = shown.isActive(a);
+    const turn = replay !== null
+      ? shown.turn === a && active
+      : !game.result().over && game.pos.turn === a && active;
     const inCheck = checked.includes(a);
-    const status = !active ? game.pos.status[a] : inCheck ? 'in check' : turn ? 'to move' : '';
+    const status = !active ? shown.status[a] : inCheck ? 'in check' : turn ? 'to move' : '';
     const color = settings.colorblind
       ? { red: '#d55e00', blue: '#0072b2', yellow: '#f0e442', green: '#009e73' }[a]
       : theme().armies[a];
@@ -680,17 +789,23 @@ function syncChrome(): void {
       <span class="chip" style="background:${color}"></span>
       <span class="name">${label}</span>
       <span class="status">${status}</span>
-      <span class="pts">${game.pos.points[a]}</span>
+      <span class="pts">${shown.points[a]}</span>
     </div>`;
   });
   el('players').innerHTML = cards.join('');
 
-  // Move list, one row per round.
+  // Move list, one row per round. In replay it shows the stored game with the current ply lit.
+  const listed = replay !== null
+    ? replay.notation.map((text, i) => ({ army: replay!.movers[i], text }))
+    : moveTexts;
   const rows: string[] = [];
-  for (let i = 0; i < moveTexts.length; i += 4) {
-    const cells = moveTexts.slice(i, i + 4).map((m) => {
+  for (let i = 0; i < listed.length; i += 4) {
+    const cells = listed.slice(i, i + 4).map((m, j) => {
       const color = theme().armies[m.army];
-      return `<span class="mv"><i style="background:${color}"></i>${m.text}</span>`;
+      const current = replay !== null && i + j === replay.ply - 1;
+      return `<span class="mv${current ? ' live' : ''}"`
+        + `${current ? ' style="outline:1.5px solid var(--accent);border-radius:4px"' : ''}>`
+        + `<i style="background:${color}"></i>${m.text}</span>`;
     });
     rows.push(`<div class="mrow"><span class="n">${i / 4 + 1}.</span>${cells.join(' ')}</div>`);
   }
@@ -707,7 +822,23 @@ function syncChrome(): void {
   }
   const resignBtn = document.getElementById('resign') as HTMLButtonElement | null;
   if (resignBtn !== null) {
-    resignBtn.disabled = r.over || !isHuman(game.pos.turn);
+    resignBtn.disabled = replay !== null || r.over || !isHuman(game.pos.turn);
+  }
+
+  // Replay bar.
+  const bar = document.getElementById('replayBar');
+  if (bar !== null) {
+    bar.classList.toggle('open', replay !== null);
+    if (replay !== null) {
+      el('rTitle').textContent = replayTitle;
+      el('rPly').textContent = `${replay.ply} / ${replay.moves.length}`;
+      (el('rStart') as HTMLButtonElement).disabled = atStart(replay);
+      (el('rPrev') as HTMLButtonElement).disabled = atStart(replay);
+      (el('rNext') as HTMLButtonElement).disabled = atEnd(replay);
+      (el('rEnd') as HTMLButtonElement).disabled = atEnd(replay);
+      (el('rPlay') as HTMLButtonElement).disabled = atEnd(replay);
+      el('gameState').textContent = `Replay — ${replayTitle}`;
+    }
   }
 }
 
@@ -791,6 +922,14 @@ function buildChrome(): void {
     if (game.result().over) audio.play('gameover');
     else scheduleBot();
   });
+
+  // Replay controls.
+  el('rClose').addEventListener('click', closeReplay);
+  el('rStart').addEventListener('click', () => replaySeek(toStart));
+  el('rPrev').addEventListener('click', () => replaySeek((r) => replayStep(r, -1)));
+  el('rNext').addEventListener('click', () => replaySeek((r) => replayStep(r, 1)));
+  el('rEnd').addEventListener('click', () => replaySeek(toEnd));
+  el('rPlay').addEventListener('click', toggleAutoplay);
 
   const nameInput = document.getElementById('playerName') as HTMLInputElement;
   const commitName = (): void => {

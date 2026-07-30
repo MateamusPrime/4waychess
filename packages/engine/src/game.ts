@@ -45,10 +45,27 @@ export interface GameEvent {
   detail?: string;
 }
 
+/**
+ * A player leaving the game, and WHEN.
+ *
+ * Retirements are not moves, so they leave no trace in the movetext — which made every game
+ * containing one unreplayable: the replay expected the retired army to keep taking turns and
+ * desynced at its next skipped seat. Recording the ply lets a replay apply the retirement at
+ * exactly the right point (RULES.md §15).
+ */
+export interface Retirement {
+  army: Army;
+  status: ArmyStatus;
+  /** Number of moves played when it happened. */
+  atPly: number;
+}
+
 export class Game {
   pos: Position;
   moves: Move[];
   events: GameEvent[];
+  /** Resignations and timeouts, in the order they occurred. */
+  retirements: Retirement[];
   private startFen: string;
   private repetition: Map<string, number>;
   private ended: GameResult;
@@ -57,6 +74,7 @@ export class Game {
     this.pos = pos;
     this.moves = [];
     this.events = [];
+    this.retirements = [];
     this.startFen = startFen ?? '';
     this.repetition = new Map();
     this.ended = { over: false, reason: 'none', winners: [] };
@@ -191,6 +209,7 @@ export class Game {
     if (this.ended.over) throw new Error('game is over');
     if (!this.pos.isActive(army)) throw new Error(`${army} is already out`);
     const out: GameEvent[] = [{ type: status === 'resigned' ? 'resign' : 'timeout', army }];
+    this.retirements.push({ army, status, atPly: this.moves.length });
 
     // Teams: surviving pieces transfer to the partner rather than dying (RULES.md §11).
     // This is what creates a "spare king", worth 3 rather than 20 (RULES.md §10).

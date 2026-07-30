@@ -43,7 +43,7 @@ export {
 } from './scoring.ts';
 
 export { Game } from './game.ts';
-export type { EndReason, GameEvent, GameResult } from './game.ts';
+export type { EndReason, GameEvent, GameResult, Retirement } from './game.ts';
 
 export {
   ENGINE_VERSION, PGN4_VERSION, formatMove, parseMoveText, readPgn4, writePgn4,

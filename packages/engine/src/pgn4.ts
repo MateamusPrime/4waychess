@@ -127,6 +127,12 @@ export function writePgn4(game: Game, extraTags: Pgn4Tags = {}): string {
     ...extraTags,
     Points: ARMIES.map((a) => game.pos.points[a]).join(','),
     Status: ARMIES.map((a) => game.pos.status[a]).join(','),
+    // Retirements are NOT moves, so they leave no trace in the movetext. Without this tag a
+    // replay keeps expecting the retired army to take turns and desyncs at its next skipped
+    // seat — which made every game containing a resignation unreplayable.
+    ...(game.retirements.length > 0
+      ? { Retirements: game.retirements.map((r) => `${r.army}:${r.status}@${r.atPly}`).join(';') }
+      : {}),
     Result: game.result().over ? game.result().winners.join(',') || 'draw' : '*',
   };
 
@@ -165,7 +171,32 @@ export function readPgn4(text: string): Pgn4Document {
     .map((s) => s.trim())
     .filter((s) => s !== '' && s !== '--' && s !== '*');
 
+  // Retirements, keyed by the ply they take effect BEFORE.
+  const retirements = new Map<number, { army: Army; status: string }[]>();
+  if (tags.Retirements !== undefined && tags.Retirements !== '') {
+    for (const entry of tags.Retirements.split(';')) {
+      const m = /^(\w+):(\w+)@(\d+)$/.exec(entry.trim());
+      if (m === null) continue;
+      const at = Number(m[3]);
+      const list = retirements.get(at) ?? [];
+      list.push({ army: m[1] as Army, status: m[2] });
+      retirements.set(at, list);
+    }
+  }
+
+  const applyRetirements = (): void => {
+    const due = retirements.get(game.moves.length);
+    if (due === undefined) return;
+    for (const r of due) {
+      if (!game.pos.isActive(r.army) || game.result().over) continue;
+      if (r.status === 'timeout') game.timeout(r.army);
+      else game.resign(r.army);
+    }
+  };
+
+  applyRetirements();
   for (const tok of tokens) {
+    if (game.result().over) break;
     const mv = parseMoveText(game.pos, tok, game.pos.turn);
     if (mv === null) {
       throw new Error(
@@ -173,7 +204,7 @@ export function readPgn4(text: string): Pgn4Document {
       );
     }
     game.play(mv);
-    if (game.result().over) break;
+    applyRetirements();
   }
 
   return { tags, game };

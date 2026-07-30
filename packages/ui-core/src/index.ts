@@ -55,3 +55,8 @@ export {
   DEFAULT_SETTINGS, SETTINGS_KEY, loadSettings, memoryStore, normalizeSettings,
   saveSettings, withSetting,
 } from './settings.ts';
+
+export type { ReplayState } from './replay.ts';
+export {
+  atEnd, atStart, loadReplay, roundOf, seek, step, toEnd, toStart,
+} from './replay.ts';
