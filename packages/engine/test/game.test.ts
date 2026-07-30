@@ -2,8 +2,9 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../src/game.ts';
 import { Position, FFA_RULES, TEAMS_RULES } from '../src/position.ts';
-import { startingPosition, parseFen4 } from '../src/fen4.ts';
+import { startingPosition, parseFen4, serializeFen4 } from '../src/fen4.ts';
 import { generateLegal } from '../src/movegen.ts';
+import { isInCheck } from '../src/attacks.ts';
 import { parseSquare, squareName, ARMIES } from '../src/geometry.ts';
 import {
   PIECE_VALUES, armiesCheckedBy, captureValue, checkBonusFor, kingCount, materialValue, newChecks,
@@ -215,6 +216,67 @@ describe('Game — elimination and end conditions (RULES.md §8, §12)', () => {
     g.resign('green');
     g.resign('blue');
     assert.deepEqual(g.result().winners.sort(), ['blue', 'red']);
+  });
+});
+
+describe('king capture (RULES.md §9, §10)', () => {
+  test('REGRESSION: losing your last king eliminates you', () => {
+    // Reported from a live game: "someone took the king as a piece and the team stayed alive".
+    // King capture is reachable because checkmate is only assessed on the victim's turn (§8) —
+    // a checked player's king can be taken by a THIRD party first. The victim used to survive
+    // with no king, and since isInCheck reports false when there is no king to check, they
+    // became permanently immune to check and checkmate and played on forever.
+    const pos = build({ d3: 'rK', h7: 'bK', k12: 'yK', n11: 'gK', h5: 'rR', b7: 'bP' });
+    const g = new Game(pos);
+    const capture = g.legalMoves().find((m) => squareName(m.to) === 'h7')!;
+    assert.equal(capture.captured, 'k', 'the king really is capturable here');
+
+    const events = g.play(capture);
+    assert.equal(g.pos.points.red, 20, 'a king is worth 20 (§10)');
+    assert.equal(g.pos.status.blue, 'captured', 'and the victim is out');
+    assert.equal(g.legalMoves('blue').length, 0, 'a dead army generates no moves');
+    assert.notEqual(g.pos.turn, 'blue', 'and never gets another turn');
+    assert.ok(events.some((e) => e.type === 'captured' && e.army === 'blue'));
+  });
+
+  test('a kingless army can never be checked, which is exactly why it must be eliminated', () => {
+    // Pins the mechanism rather than just the symptom: without elimination this army would be
+    // immortal, because "in check" is undefined for a player with no king.
+    const pos = build({ d3: 'rK', h7: 'bK', k12: 'yK', n11: 'gK', h5: 'rR' });
+    const g = new Game(pos);
+    g.play(g.legalMoves().find((m) => squareName(m.to) === 'h7')!);
+    assert.equal(g.pos.kingSquare('blue'), -1);
+    assert.equal(isInCheck(g.pos, 'blue'), false, 'no king means never in check');
+    assert.equal(g.pos.isActive('blue'), false, 'so elimination cannot rely on check at all');
+  });
+
+  test('a SPARE king absorbs the capture — the army plays on', () => {
+    // Teams inheritance can leave one army holding two kings; capturing one is worth 3, not 20
+    // (§10), and must not end them.
+    const pos = build({ d3: 'rK', h7: 'bK', e5: 'bK', k12: 'yK', n11: 'gK', h5: 'rR' });
+    const g = new Game(pos);
+    g.play(g.legalMoves().find((m) => squareName(m.to) === 'h7')!);
+    assert.equal(g.pos.points.red, 3, 'a spare king is worth 3');
+    assert.equal(g.pos.status.blue, 'active', 'and the army survives on its remaining king');
+    assert.ok(g.legalMoves('blue').length > 0);
+  });
+
+  test('capturing the last king can end the game outright', () => {
+    const pos = build({ d3: 'rK', h7: 'bK', h5: 'rR' });
+    const g = new Game(pos);
+    g.pos.status.yellow = 'resigned';
+    g.pos.status.green = 'resigned';
+    g.play(g.legalMoves().find((m) => squareName(m.to) === 'h7')!);
+    assert.equal(g.result().over, true);
+    assert.equal(g.result().reason, 'elimination');
+  });
+
+  test('the captured status survives a FEN4 round trip', () => {
+    const pos = build({ d3: 'rK', h7: 'bK', k12: 'yK', n11: 'gK', h5: 'rR' });
+    const g = new Game(pos);
+    g.play(g.legalMoves().find((m) => squareName(m.to) === 'h7')!);
+    const back = parseFen4(serializeFen4(g.pos));
+    assert.equal(back.status.blue, 'captured');
   });
 });
 

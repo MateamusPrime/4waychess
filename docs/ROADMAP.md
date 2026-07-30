@@ -242,6 +242,12 @@ rotated through every seat. That removes RNG noise entirely and leaves only posi
 variance, typically cutting the games needed by an order of magnitude. That is the right next
 step for anyone resuming bot work, and it should come *before* more tuning compute.
 
+Identified but NOT shipped (would need arena validation, which the noise floor makes
+expensive): the eval excludes kings from the hanging-piece term, so a bot does not directly
+price "my king is attacked and a third party could take it for +20". Standing in check is
+genuinely more dangerous in four-way chess than in chess, because two opponents move before
+you can respond. Candidate improvement, unvalidated.
+
 Remaining strength levers: larger worker budgets (the worker means bot thinking no longer
 competes with the UI thread), and eventually Lever 3 (learned eval over the game corpus that
 Phase 3 persistence is now accumulating).

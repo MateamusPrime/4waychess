@@ -150,6 +150,23 @@ Concretely for Red (all other armies are the rotation of this):
   is stalemated. P's army becomes inactive and P is awarded **+20** ("self-stalemate"). This rewards
   engineering your own stalemate, which is intentional in FFA and worth testing deliberately.
 
+### 8.1 King capture — DECIDED (found in live play)
+
+A king can be captured, and losing your **last** king eliminates you (status `captured`).
+
+This is reachable rather than theoretical, and it follows directly from §8: checkmate is only
+assessed when the victim's turn arrives, so a checked player's king can be taken by a **third
+party** before they ever get the chance to respond. The scoring table already prices it — a king
+is +20, a spare king +3 (§10) — so the rules always contemplated it; only the consequence was
+missing.
+
+An army holding a **spare** king (possible via Teams inheritance, §11) survives losing one and
+plays on with the other.
+
+Note the mechanism this protects against: "in check" is undefined for a player with no king, so
+a kingless army that stayed active would be permanently immune to check and checkmate and could
+never be eliminated at all.
+
 ## 9. Elimination and dead armies — DECIDED
 
 When a player is eliminated (checkmate, stalemate, resignation, timeout):

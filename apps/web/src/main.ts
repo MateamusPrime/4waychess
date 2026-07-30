@@ -798,16 +798,43 @@ function syncChrome(): void {
   const listed = replay !== null
     ? replay.notation.map((text, i) => ({ army: replay!.movers[i], text }))
     : moveTexts;
+
+  /**
+   * Group into rounds by SEAT ORDER, not by chunks of four.
+   *
+   * Once a player is eliminated they stop moving, so a round contains fewer than four moves —
+   * and naive `slice(i, i+4)` chunking then shifts every later move into the wrong column.
+   * The reported symptom was Green appearing to move Red's king, and one army seeming to move
+   * twice in a round. Grouping on a seat-index decrease starts a new round exactly when the
+   * turn order wraps, which stays correct however many players have dropped out.
+   */
+  const rounds: { army: Army; text: string }[][] = [];
+  let current: { army: Army; text: string }[] = [];
+  let lastSeatIndex = -1;
+  for (const m of listed) {
+    const seatIndex = ARMIES.indexOf(m.army);
+    if (seatIndex <= lastSeatIndex) {
+      rounds.push(current);
+      current = [];
+    }
+    current.push(m);
+    lastSeatIndex = seatIndex;
+  }
+  if (current.length > 0) rounds.push(current);
+
   const rows: string[] = [];
-  for (let i = 0; i < listed.length; i += 4) {
-    const cells = listed.slice(i, i + 4).map((m, j) => {
+  let plyCursor = 0;
+  for (const [roundIndex, round] of rounds.entries()) {
+    const cells = round.map((m) => {
       const color = theme().armies[m.army];
-      const current = replay !== null && i + j === replay.ply - 1;
-      return `<span class="mv${current ? ' live' : ''}"`
-        + `${current ? ' style="outline:1.5px solid var(--accent);border-radius:4px"' : ''}>`
+      const current2 = replay !== null && plyCursor === replay.ply - 1;
+      plyCursor++;
+      return `<span class="mv${current2 ? ' live' : ''}"`
+        + `${current2 ? ' style="outline:1.5px solid var(--accent);border-radius:4px"' : ''}`
+        + ` title="${m.army}">`
         + `<i style="background:${color}"></i>${m.text}</span>`;
     });
-    rows.push(`<div class="mrow"><span class="n">${i / 4 + 1}.</span>${cells.join(' ')}</div>`);
+    rows.push(`<div class="mrow"><span class="n">${roundIndex + 1}.</span>${cells.join(' ')}</div>`);
   }
   el('moves').innerHTML = rows.join('');
   el('moves').scrollTop = el('moves').scrollHeight;

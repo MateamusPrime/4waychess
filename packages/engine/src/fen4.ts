@@ -49,10 +49,11 @@ export const CHESSCOM_START =
   '14/3,rP,rP,rP,rP,rP,rP,rP,rP,3/3,rR,rN,rB,rQ,rK,rB,rN,rR,3';
 
 const STATUS_CODE: Readonly<Record<ArmyStatus, string>> = {
-  active: '0', checkmated: '1', stalemated: '2', resigned: '3', timeout: '4',
+  active: '0', checkmated: '1', stalemated: '2', resigned: '3', timeout: '4', captured: '5',
 };
 const CODE_STATUS: Readonly<Record<string, ArmyStatus>> = {
   '0': 'active', '1': 'checkmated', '2': 'stalemated', '3': 'resigned', '4': 'timeout',
+  '5': 'captured',
 };
 
 /** Parse just the board field into a Position. */

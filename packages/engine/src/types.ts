@@ -25,7 +25,16 @@ export type ArmyStatus =
   | 'checkmated'
   | 'stalemated'
   | 'resigned'
-  | 'timeout';
+  | 'timeout'
+  /**
+   * The army's last king was captured.
+   *
+   * Mechanically distinct from checkmate: no escape was ever possible, because the victim
+   * never got a turn. It arises naturally in four-way chess — checkmate is only assessed when
+   * the victim's turn arrives (§8), so a checked player's king can be taken by a THIRD party
+   * first. The rules already price this (+20 for a king, +3 for a spare, §10).
+   */
+  | 'captured';
 
 /** A square index, 0..195, laid out as `rank * 14 + file`. */
 export type Square = number;

@@ -17,7 +17,8 @@ import { startingPosition } from './fen4.ts';
 import { generateLegal, turnOutcome } from './movegen.ts';
 import { checkingArmies } from './attacks.ts';
 import {
-  CHECKMATE_BONUS, SELF_STALEMATE_BONUS, armiesCheckedBy, captureValue, checkBonusFor, newChecks,
+  CHECKMATE_BONUS, SELF_STALEMATE_BONUS, armiesCheckedBy, captureValue, checkBonusFor,
+  kingCount, newChecks,
 } from './scoring.ts';
 
 export type EndReason =
@@ -37,7 +38,7 @@ export interface GameResult {
 /** Something that happened as a consequence of a move, for the UI and the move log. */
 export interface GameEvent {
   type: 'capture' | 'check' | 'multi-check' | 'checkmate' | 'stalemate' | 'promotion'
-      | 'resign' | 'timeout' | 'inherit' | 'end';
+      | 'resign' | 'timeout' | 'inherit' | 'captured' | 'end';
   army: Army;
   /** For eliminations: who caused it. For captures: the victim. */
   other?: Army;
@@ -118,6 +119,26 @@ export class Game {
     if (gained > 0 && move.capturedArmy !== null) {
       this.pos.points[mover] += gained;
       produced.push({ type: 'capture', army: mover, other: move.capturedArmy, points: gained });
+    }
+
+    // Losing your last king ends your game.
+    //
+    // King capture is reachable and priced by the rules (+20, or +3 for a spare — §10), because
+    // checkmate is only assessed when the victim's turn arrives (§8): a checked player's king
+    // can be taken by a THIRD party before they ever get to respond. Without this, the victim
+    // survived with no king — and since `isInCheck` reports false when there is no king to
+    // check, they became permanently immune to check and checkmate and played on forever.
+    if (move.captured === 'k' && move.capturedArmy !== null) {
+      const victim = move.capturedArmy;
+      if (this.pos.isActive(victim) && kingCount(this.pos, victim) === 0) {
+        this.eliminate(victim, 'captured');
+        produced.push({ type: 'captured', army: victim, other: mover });
+        // makeMove already advanced the turn while the victim was still active, so it may now
+        // be pointing at an army that has just been eliminated.
+        if (!this.pos.isActive(this.pos.turn)) {
+          this.pos.turn = this.pos.nextActive(this.pos.turn);
+        }
+      }
     }
     if (move.promotion !== null) {
       produced.push({ type: 'promotion', army: mover, detail: move.promotion });
