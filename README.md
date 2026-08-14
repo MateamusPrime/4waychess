@@ -4,6 +4,22 @@ A four-player chess implementation for the 14×14 board: rules engine, bots, and
 
 The interesting part is not the game. It is the correctness problem underneath it.
 
+## What it looks like
+
+A bot-vs-bot free-for-all, twenty-one moves in. Green has been checkmated and is greyed out: dead pieces never move and never give check, but they still block movement and can be captured for zero points, so they become pure terrain. Scores on the left are the FFA points race, which is how the game is actually won. In the move list, `d3xc4e.p.` is an en passant capture across perpendicular pawn walls.
+
+![Mid-game free-for-all with a checkmated player](docs/screenshots/02-midgame.png)
+
+The opening position. Every army's back line reads `RNBQKBNR` from its own left, which makes the position 90° rotationally symmetric and is the divergence from chess.com described in `docs/RULES.md` §4.2.
+
+![Opening position](docs/screenshots/01-start.png)
+
+Three themes, switchable mid-game.
+
+| Atelier | Storybook |
+|---|---|
+| ![Atelier theme](docs/screenshots/03-atelier.png) | ![Storybook theme](docs/screenshots/04-storybook.png) |
+
 ## The correctness problem
 
 Standard chess engines prove their move generation is right by comparing `perft` node counts against published reference data. Everyone uses the same numbers, so a bug shows up immediately.
