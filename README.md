@@ -98,6 +98,9 @@ docs/
 
 ## Running it
 
+Node 24 or newer (`.nvmrc` pins it — `nvm use` picks it up). The engine relies on
+Node's native type stripping, so there is no build step to run first.
+
 ```bash
 npm install
 npm run dev            # web client
