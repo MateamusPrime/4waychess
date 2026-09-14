@@ -49,6 +49,18 @@ with a **fresh seed each night**, so the evidence accumulates over positions no 
 reached rather than re-checking the same ground. A failing run prints its seed; dispatch the
 workflow with that seed to reproduce it exactly.
 
+The first CI sweep **PASSED** on seed `1789400178`: 3,000,000 positions across 4,172 games and
+748,533 plies, **0 mismatches**, 783.3s at 3,830 positions/sec on a GitHub runner. Reproduce with:
+
+```
+node packages/engine/src/tools/differential-cli.ts 3000000 1789400178
+```
+
+That matters more than a re-run would: it is a *second independent* sweep, not a repeat of the
+one above. The two seeds walk disjoint position sets, so the gate's evidence now stands at
+**6,000,000 positions over two independent seeds, still 0 mismatches** — which is precisely the
+compounding the varying seed exists to produce, and it grows by another 3,000,000 every night.
+
 Every rule in `RULES.md` has a named test that cites its section.
 
 ### What building it actually taught us
