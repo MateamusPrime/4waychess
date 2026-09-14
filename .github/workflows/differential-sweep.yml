@@ -1,0 +1,68 @@
+name: Differential sweep
+
+# The deep correctness gate from ROADMAP.md Phase 0: the fast generator and the
+# independent naive one must agree everywhere. There is no published perft
+# reference for four-way chess, so this agreement IS the correctness argument
+# (RISKS.md R4). Too slow for a per-PR job, so it runs nightly.
+#
+# Each run uses a DIFFERENT seed, so every night explores positions no previous
+# run reached. A fixed seed would re-check the same ground forever. The seed is
+# printed before the sweep starts and again on any mismatch — feed it back
+# through workflow_dispatch to reproduce a failure exactly.
+
+on:
+  schedule:
+    # 06:17 UTC nightly. Off the hour: scheduled jobs bunched on :00 queue longest.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      positions:
+        description: Positions to check
+        required: false
+        default: '3000000'
+      seed:
+        description: RNG seed — leave blank for a fresh one, or paste the seed from a failed run to reproduce it
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: sweep
+    runs-on: ubuntu-latest
+    # Roughly 10-30 min depending on runner; generous headroom so a slow runner
+    # is not mistaken for a hang.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          # No npm cache: nothing is installed. See below.
+
+      # No `npm ci`. The engine has zero dependencies and the CLI imports only
+      # relative paths and node: builtins, so the sweep runs against a bare
+      # checkout. If this step ever needs node_modules, the engine has grown a
+      # dependency and ARCHITECTURE.md §1 has been violated.
+      - name: Run sweep
+        env:
+          # Passed through env, never interpolated into the script body.
+          POSITIONS: ${{ inputs.positions }}
+          SEED: ${{ inputs.seed }}
+        run: |
+          set -euo pipefail
+          positions="${POSITIONS:-3000000}"
+          # Epoch seconds: always a large 31-bit value. The CLI's xorshift32 is
+          # unmixed, so small seeds produce a degenerate opening stretch.
+          seed="${SEED:-$(date +%s)}"
+
+          echo "positions : $positions"
+          echo "seed      : $seed"
+          echo "reproduce : node packages/engine/src/tools/differential-cli.ts $positions $seed"
+          echo ""
+
+          node packages/engine/src/tools/differential-cli.ts "$positions" "$seed"

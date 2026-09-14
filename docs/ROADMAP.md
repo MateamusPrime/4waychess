@@ -43,6 +43,11 @@ both modes and random eliminations — **0 mismatches** between the fast and nai
 node packages/engine/src/tools/differential-cli.ts 3000000 3735928559
 ```
 
+A sweep of that size also runs nightly in CI (`.github/workflows/differential-sweep.yml`),
+with a **fresh seed each night**, so the evidence accumulates over positions no earlier run
+reached rather than re-checking the same ground. A failing run prints its seed; dispatch the
+workflow with that seed to reproduce it exactly.
+
 Every rule in `RULES.md` has a named test that cites its section.
 
 ### What building it actually taught us
