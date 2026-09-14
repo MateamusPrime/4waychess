@@ -23,7 +23,8 @@ cannot be "mostly done" forever. Risk references point at `RISKS.md`.
 - [x] Teams mode as configuration — no friendly fire, no partner check, rank-11 promotion. (R6)
 - [x] Independent naive generator + differential harness. (R4)
 - [x] Frozen perft baselines — opening **and** a tactical position.
-- [x] Architecture purity enforced in CI rather than by convention.
+- [x] Architecture purity enforced in CI rather than by convention — `test/architecture.test.ts`,
+      run on every push and pull request by `.github/workflows/ci.yml`.
 - [x] PGN4 read + write, versioned, recording ruleset and engine version per game. (§15)
 - [x] Scoring: FFA point table, check bonuses, checkmate and stalemate awards. (§10)
 - [x] Repetition and fifty-round detection. (§13)
@@ -33,7 +34,7 @@ cannot be "mostly done" forever. Risk references point at `RISKS.md`.
 **Gate:** differential test runs clean over millions of positions; every rule in `RULES.md` has a named
 test; engine has zero dependencies and zero imports from `apps/*`.
 
-**Gate status: PASSED.** 127 tests passing. Purity check green. Engine has zero dependencies.
+**Gate status: PASSED.** 142 tests passing. Purity check green. Engine has zero dependencies.
 
 Deep differential sweep **PASSED**: 3,000,000 positions across 4,109 games and 748,600 plies, covering
 both modes and random eliminations — **0 mismatches** between the fast and naive generators
@@ -84,7 +85,7 @@ Every rule in `RULES.md` has a named test that cites its section.
 
 **Goal:** hotseat play that people want to touch. This is the phase the whole product is judged on.
 
-### 1a — View model (`packages/ui-core`) ▸ **COMPLETE**, 165 tests
+### 1a — View model (`packages/ui-core`) ▸ **COMPLETE**, 178 tests
 
 The seam that makes this phase testable: ui-core emits a pure **draw-command list**, and the renderer
 only walks it. Appearance is therefore unit-testable with no canvas, no browser and no snapshots — and

@@ -105,7 +105,7 @@ Node's native type stripping, so there is no build step to run first.
 npm install
 npm run dev            # web client
 npm test               # all workspaces
-npm run test:engine    # engine only, 83 tests
+npm run test:engine    # engine only, 142 tests
 npm run perft          # frozen perft baselines
 ```
 
