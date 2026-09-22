@@ -13,6 +13,10 @@
     "dev": "npm run dev -w @4wc/web",
     "test": "npm run test --workspaces --if-present",
     "test:engine": "npm run test -w @4wc/engine",
-    "perft": "npm run perft -w @4wc/engine"
+    "perft": "npm run perft -w @4wc/engine",
+    "advisor": "node packages/advisor/src/tools/advisor-cli.ts",
+    "test:advisor": "npm run test -w @4wc/advisor",
+    "trainer": "npm run dev -w @4wc/trainer",
+    "build:site": "npm run build -w @4wc/web && npm run build -w @4wc/trainer && rm -rf build && mkdir -p build/trainer && cp apps/web/index.html build/ && cp -r apps/web/dist build/dist && cp apps/trainer/index.html build/trainer/ && cp -r apps/trainer/dist build/trainer/dist && cp -r apps/trainer/vendor build/trainer/vendor"
   }
 }

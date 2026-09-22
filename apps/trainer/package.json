@@ -1,0 +1,20 @@
+{
+  "name": "@4wc/trainer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Live move trainer for standard chess: play in the browser with Stockfish analysing every position as you go.",
+  "scripts": {
+    "vendor": "node scripts/vendor.js",
+    "dev": "npm run vendor && esbuild src/main.ts --bundle --outdir=dist --servedir=. --serve=127.0.0.1:8735",
+    "build": "npm run vendor && esbuild src/main.ts --bundle --minify --outdir=dist",
+    "test": "npm run vendor && esbuild src/main.ts --bundle --outdir=dist --log-level=warning"
+  },
+  "dependencies": {
+    "@4wc/advisor": "*",
+    "@4wc/pieces": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

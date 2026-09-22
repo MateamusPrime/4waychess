@@ -1,0 +1,22 @@
+{
+  "name": "@4wc/advisor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standard-chess training advisor on top of Stockfish: MultiPV candidates, move grading, trap detection, sparring, and game review.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts"
+  },
+  "bin": {
+    "advisor": "./src/tools/advisor-cli.ts"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "cli": "node src/tools/advisor-cli.ts"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "stockfish": "^19.0.0"
+  }
+}

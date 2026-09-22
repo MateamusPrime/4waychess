@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Move Trainer</title>
+<style>
+  :root {
+    --page: #0a0e14; --text: #e6edf5; --muted: #7d8b9e;
+    --panel: rgba(255,255,255,.035); --panel-brd: rgba(255,255,255,.08);
+    --accent: #ffc93d; --radius: 12px;
+    --sq-dark: #6f8399; --sq-light: #dbe3ec;
+    --best: #3fb950; --good: #7fc8a9; --inaccuracy: #e3b341; --mistake: #f0883e; --blunder: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page); color: var(--text);
+    font: 14px/1.45 Inter, "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #app {
+    display: grid; height: 100dvh; gap: 14px; padding: 14px;
+    grid-template-columns: 250px minmax(0,1fr) 300px;
+  }
+  @media (max-width: 980px) {
+    body { overflow: auto; }
+    #app { grid-template-columns: 1fr; height: auto; }
+  }
+  aside { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+  #stage { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  #boardwrap { display: flex; gap: 10px; min-height: 0; flex: 1; justify-content: center; }
+  #board { aspect-ratio: 1; height: 100%; max-width: 100%; border-radius: var(--radius); overflow: hidden; }
+  #board svg { width: 100%; height: 100%; display: block; cursor: pointer; }
+  #evalbar { width: 18px; border-radius: 9px; background: #26292e; overflow: hidden; display: flex; flex-direction: column-reverse; }
+  #evalbar .w { background: #f3f5f8; height: 50%; transition: height .4s ease; }
+  #verdict {
+    min-height: 58px; border-radius: var(--radius); padding: 10px 14px;
+    background: var(--panel); border: 1px solid var(--panel-brd); display: flex; align-items: center; gap: 12px;
+  }
+  #verdict .tag { font-weight: 800; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; padding: 4px 9px; border-radius: 7px; color: #14181f; background: var(--muted); }
+  #verdict .msg { flex: 1; }
+  #verdict.best .tag { background: var(--best); }
+  #verdict.good .tag { background: var(--good); }
+  #verdict.inaccuracy .tag { background: var(--inaccuracy); }
+  #verdict.mistake .tag { background: var(--mistake); }
+  #verdict.blunder .tag { background: var(--blunder); }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--panel-brd);
+    border-radius: var(--radius); padding: 13px; margin-bottom: 12px;
+  }
+  .panel h3 {
+    font-size: 10px; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 9px; font-weight: 800;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .row label { color: var(--muted); font-size: 12px; }
+  button, select, input[type="number"], input[type="text"] {
+    background: transparent; color: var(--text); border: 1px solid var(--panel-brd);
+    border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer;
+  }
+  input[type="number"] { width: 78px; cursor: text; }
+  input[type="text"] { width: 100%; cursor: text; font-size: 12px; }
+  button:hover, select:hover { border-color: var(--accent); }
+  button:disabled { opacity: .35; cursor: default; }
+  button.primary { background: var(--accent); color: #14181f; border-color: var(--accent); font-weight: 800; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btns button { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--panel-brd); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 9px; font-size: 12px; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #14181f; }
+  input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .status { font-size: 12px; color: var(--muted); }
+
+  .cand { display: grid; grid-template-columns: 22px 62px 54px 1fr; align-items: center; gap: 6px; padding: 6px 4px; border-radius: 8px; cursor: pointer; }
+  .cand:hover { background: rgba(255,255,255,.05); }
+  .cand .rank { color: var(--muted); font-size: 12px; }
+  .cand .san { font-weight: 800; font-size: 15px; }
+  .cand .score { font-variant-numeric: tabular-nums; font-size: 13px; }
+  .cand .bar { height: 10px; border-radius: 5px; background: #26292e; overflow: hidden; }
+  .cand .bar i { display: block; height: 100%; background: var(--best); }
+  .cand .pv { grid-column: 2 / -1; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hidden { color: var(--muted); font-size: 13px; }
+  .trap { padding: 7px 9px; border-radius: 8px; background: color-mix(in srgb, var(--blunder) 16%, transparent); border: 1px solid color-mix(in srgb, var(--blunder) 40%, transparent); font-size: 12px; margin-bottom: 6px; }
+  .note { font-size: 12px; color: var(--muted); }
+
+  #moves { display: grid; grid-template-columns: 36px 1fr 1fr; gap: 2px 6px; font-variant-numeric: tabular-nums; font-size: 13px; }
+  #moves .n { color: var(--muted); }
+  #moves .m { padding: 2px 6px; border-radius: 6px; cursor: default; }
+  #moves .m.best { color: var(--best); }
+  #moves .m.inaccuracy { color: var(--inaccuracy); }
+  #moves .m.mistake { color: var(--mistake); }
+  #moves .m.blunder { color: var(--blunder); font-weight: 800; }
+  #graph { width: 100%; height: 70px; display: block; }
+  .acc { display: flex; justify-content: space-between; font-size: 13px; }
+  .acc b { font-size: 18px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <div class="panel">
+      <h3>Game</h3>
+      <div class="row"><label>Opponent</label>
+        <div class="seg" id="mode">
+          <button data-v="engine" aria-pressed="true">Engine</button>
+          <button data-v="both" aria-pressed="false">Both sides</button>
+        </div>
+      </div>
+      <div class="row" id="elo-row"><label>Engine Elo</label><input type="number" id="elo" min="1320" max="3190" step="10" value="1500"></div>
+      <div class="row" id="color-row"><label>You play</label>
+        <div class="seg" id="color">
+          <button data-v="w" aria-pressed="true">White</button>
+          <button data-v="b" aria-pressed="false">Black</button>
+        </div>
+      </div>
+      <div class="btns">
+        <button class="primary" id="new">New game</button>
+        <button id="undo">Undo</button>
+        <button id="flip">Flip</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Trainer</h3>
+      <div class="row"><label>Hints</label>
+        <div class="seg" id="hints">
+          <button data-v="ask" aria-pressed="true">On request</button>
+          <button data-v="always" aria-pressed="false">Always</button>
+        </div>
+      </div>
+      <div class="row"><label>Warn about traps</label><input type="checkbox" id="traps" checked></div>
+      <div class="row"><label>Think time (s)</label><input type="number" id="think" min="0.2" max="10" step="0.2" value="1"></div>
+      <div class="row"><label>Candidates</label><input type="number" id="multipv" min="1" max="8" value="3"></div>
+      <div class="btns"><button id="hint">Show hint</button></div>
+    </div>
+    <div class="panel">
+      <h3>Position</h3>
+      <input type="text" id="fen" placeholder="Paste a FEN and press Enter">
+      <div class="btns" style="margin-top:8px"><button id="copypgn">Copy PGN</button></div>
+    </div>
+    <div class="panel"><h3>Engine</h3><div class="status" id="status">Loading Stockfish…</div></div>
+  </aside>
+
+  <main id="stage">
+    <div id="boardwrap">
+      <div id="evalbar" title="White's win probability"><div class="w"></div></div>
+      <div id="board"></div>
+    </div>
+    <div id="verdict"><span class="tag">Ready</span><span class="msg">Make a move. Every move you play is graded live against Stockfish.</span></div>
+  </main>
+
+  <aside>
+    <div class="panel">
+      <h3>Live analysis <span class="status" id="depth"></span></h3>
+      <div id="analysis"><div class="hidden">Waiting for the engine…</div></div>
+      <div id="trapbox"></div>
+    </div>
+    <div class="panel">
+      <h3>Accuracy</h3>
+      <div class="acc"><span>White <b id="accw">–</b></span><span>Black <b id="accb">–</b></span></div>
+      <svg id="graph" viewBox="0 0 300 70" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="panel"><h3>Moves</h3><div id="moves"></div></div>
+  </aside>
+</div>
+<script type="module" src="dist/main.js"></script>
+</body>
+</html>
