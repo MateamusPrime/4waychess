@@ -166,7 +166,8 @@ instruction, and wants to play again. If that is not true, do not proceed.
 - [x] Personalities: Reaper (aggressive) / Bastion (turtle) / Magpie (opportunist) /
       Leveller (kingmaker), distinct weight profiles, softmax variance **windowed to 2.5
       points** so temperature varies play but can never blunder a hanging queen.
-- [x] Difficulty tiers: easy d1 / medium d2 / hard d3. Teams-aware via the engine's
+- [x] Difficulty tiers: easy d1 / medium d2 / hard iterative to d4 / expert iterative to d5
+      (hard was a fixed d3 until Phase 2.5 revisited). Teams-aware via the engine's
       `areEnemies` plus partner-score folding.
 - [x] App wiring: per-seat Human/personality picker, difficulty select, bot think-delay, board
       rotation only for **human** hand-offs, default table = you vs Reaper/Magpie/Bastion.
