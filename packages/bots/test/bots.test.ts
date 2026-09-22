@@ -1,7 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ARMIES, FFA_RULES, Game, Position, TEAMS_RULES, generateLegal, parseSquare, squareName,
+  ARMIES, FFA_RULES, Game, Position, TEAMS_RULES, attackMap, generateLegal, parseSquare,
+  squareName,
   startingPosition,
 } from '@4wc/engine';
 import type { Army, PieceType, Ruleset } from '@4wc/engine';
@@ -12,6 +13,7 @@ import {
   DIFFICULTIES, PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign,
 } from '../src/personalities.ts';
 import { makeRng } from '../src/rng.ts';
+import { orderByThreat } from '../src/core.ts';
 
 function build(pieces: Record<string, string>, rules: Ruleset = FFA_RULES): Position {
   const p = new Position(rules);
@@ -203,6 +205,68 @@ describe('search', () => {
     assert.equal(squareName(r.move!.to), 'i5', 'an actually-free knight is still taken');
   });
 
+  test('threat ordering: captures first, then rescuing an attacked piece, never walking into one', () => {
+    // Red's queen on h5 is attacked by Yellow's i6 pawn (Yellow captures toward Red's side).
+    const pos = build({ ...FAR_KINGS, h5: 'rQ', i6: 'yP', b2: 'rN' });
+    pos.turn = 'red';
+    const ordered = orderByThreat(pos, generateLegal(pos, 'red'));
+    assert.equal(squareName(ordered[0].to), 'i6', 'the free pawn capture leads');
+    const firstQuiet = ordered.find((m) => m.captured === null)!;
+    assert.equal(firstQuiet.piece, 'q', 'the attacked queen moves before anything else');
+    const enemyAttacks = ['blue', 'yellow', 'green'].map((a) => attackMap(pos, a as Army));
+    const unsafe = (sq: number): boolean => enemyAttacks.some((m) => m[sq] === 1);
+    assert.ok(!unsafe(firstQuiet.to), 'and moves somewhere safe');
+    const queenQuiet = ordered.filter((m) => m.piece === 'q' && m.captured === null);
+    const lastSafe = queenQuiet.map((m) => !unsafe(m.to)).lastIndexOf(true);
+    const firstUnsafe = queenQuiet.findIndex((m) => unsafe(m.to));
+    assert.ok(firstUnsafe === -1 || firstUnsafe > lastSafe,
+      'queen moves onto attacked squares rank below every safe queen move');
+  });
+
+  test('the root ranks EVERY legal move, so a small branchCap cannot hide the best one', () => {
+    // Under the legacy ordering the root kept captures plus the first quiet moves in
+    // generation order (a board scan from Red's back rank), so here — queen attacked by a
+    // pawn, the only capture a poisoned one, and a dozen quiet moves scanned before the
+    // queen's — the rescue fell outside the cap and the bot took the defended pawn.
+    const pos = build({
+      ...FAR_KINGS, h5: 'rQ', i6: 'yP', j7: 'yP', e2: 'rP', f2: 'rP', g2: 'rP', d2: 'rN',
+      e1: 'rB',
+    });
+    pos.turn = 'red';
+    const safe = (o: Partial<SearchOptions>): boolean => {
+      const m = pickMove(pos, opts({ depth: 1, branchCap: 8, ...o })).move!;
+      return m.piece === 'q' && m.captured === null;
+    };
+    assert.ok(safe({}), 'the attacked queen retreats');
+    assert.ok(!safe({ ordering: 'mvv' }), 'legacy ordering never even looked at the retreat');
+  });
+
+  test('iterative deepening: reaches the ceiling with room to spare, stops inside the budget', () => {
+    const roomy = pickMove(startingPosition(), opts({
+      depth: 3, nodeBudget: 60_000, branchCap: 10, iterative: true,
+    }));
+    assert.equal(roomy.depthReached, 3);
+    assert.ok(roomy.move !== null);
+
+    const tight = pickMove(startingPosition(), opts({
+      depth: 6, nodeBudget: 3_000, branchCap: 10, iterative: true,
+    }));
+    assert.ok(tight.depthReached >= 2 && tight.depthReached < 6, `depth ${tight.depthReached}`);
+    assert.ok(tight.nodes <= 3_000 + 50, `nodes ${tight.nodes}`);
+    assert.ok(tight.move !== null);
+  });
+
+  test('iterative deepening is deterministic under a seed', () => {
+    const run = (): string => {
+      const r = pickMove(startingPosition(), opts({
+        depth: 4, nodeBudget: 5_000, branchCap: 10, iterative: true, temperature: 1,
+        rng: makeRng(3),
+      }));
+      return `${r.move!.from}-${r.move!.to}/${r.nodes}`;
+    };
+    assert.equal(run(), run());
+  });
+
   test('respects the node budget', () => {
     const r = pickMove(startingPosition(), opts({ depth: 3, nodeBudget: 500 }));
     assert.ok(r.nodes <= 600, `nodes ${r.nodes}`);
@@ -280,7 +344,10 @@ describe('personalities', () => {
   test('difficulty tiers escalate depth and budget, and sharpen selection', () => {
     assert.ok(DIFFICULTIES.easy.depth < DIFFICULTIES.medium.depth);
     assert.ok(DIFFICULTIES.medium.depth <= DIFFICULTIES.hard.depth);
+    assert.ok(DIFFICULTIES.hard.depth <= DIFFICULTIES.expert.depth);
     assert.ok(DIFFICULTIES.easy.nodeBudget < DIFFICULTIES.hard.nodeBudget);
+    assert.ok(DIFFICULTIES.hard.nodeBudget < DIFFICULTIES.expert.nodeBudget);
+    assert.equal(DIFFICULTIES.expert.temperature, 0);
     assert.ok(DIFFICULTIES.easy.temperature > DIFFICULTIES.medium.temperature);
     assert.equal(DIFFICULTIES.hard.temperature, 0);
   });

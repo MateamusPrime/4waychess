@@ -6,12 +6,17 @@
  * signal to clear the noise. This harness is also the skeleton of the Lever-2 self-play tuner:
  * swap "candidate search" for "candidate weights" and the same loop optimises the eval.
  *
- *   node src/tools/arena-cli.ts [games] [nodeBudget]
+ *   node src/tools/arena-cli.ts [games] [nodeBudget] [--candidate=P] [--incumbent=P]
+ *                               [--start=N] [--json]
  *
- * As configured, `candidate` and `incumbent` below differ only in leaf resolution
+ * With no preset flags, `candidate` and `incumbent` differ only in leaf resolution
  * (capture-rollout vs bare eval) — the last of the three Lever-1 hypotheses, and like the
- * other two it LOST (2.1% wins, 0.50x points). Swap the two pickers to test anything else;
- * the harness cares only that both sides get the same budget and rotate through every seat.
+ * other two it LOST (2.1% wins, 0.50x points). The harness cares only that both sides rotate
+ * through every seat; equal budgets are the default, and PRESETS (below) name configurations
+ * that deliberately differ, for measuring a shipped tier against the one it replaces.
+ *
+ * `--start=N` offsets the game index (and so the seeds and seat rotation), so one experiment
+ * can be split across processes; `--json` prints the per-game differentials for merging.
  */
 
 import { ARMIES, FFA_RULES, Game } from '@4wc/engine';
@@ -19,6 +24,8 @@ import type { Army, Move, Position } from '@4wc/engine';
 import { DEFAULT_WEIGHTS, uniformWeights } from '../eval.ts';
 import type { EvalWeights, WeightsByArmy } from '../eval.ts';
 import { pickMove } from '../search.ts';
+import type { SearchOptions } from '../search.ts';
+import { DIFFICULTIES } from '../personalities.ts';
 import { makeRng } from '../rng.ts';
 
 /**
@@ -46,8 +53,12 @@ const seatWeights = (self: EvalWeights, army: Army): WeightsByArmy => {
   return table;
 };
 
-const GAMES = Number(process.argv[2] ?? 48);
-const BUDGET = Number(process.argv[3] ?? 2_500);
+const positional = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const flag = (name: string): string | undefined =>
+  process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+const GAMES = Number(positional[0] ?? 48);
+const BUDGET = Number(positional[1] ?? 2_500);
+const START = Number(flag('start') ?? 0);
 const MAX_PLIES = 320;
 
 type Picker = (pos: Position, army: Army, seed: number) => Move | null;
@@ -72,6 +83,40 @@ const candidate: Picker = (pos, army, seed) => {
   }).move;
 };
 
+/**
+ * Named configurations. Temperature is fixed at 0.4 for every preset: at 0 all four seats are
+ * deterministic and every game with the same seat rotation would be identical.
+ */
+const preset = (o: Partial<SearchOptions>): Picker => (pos, army, seed) => {
+  if (pos.turn !== army) return null;
+  return pickMove(pos, {
+    depth: 3, nodeBudget: BUDGET, branchCap: 14, temperature: 0.4,
+    weights: uniformWeights(), rng: makeRng(seed), ...o,
+  }).move;
+};
+const PRESETS: Record<string, Picker> = {
+  /** Hard as shipped before threat ordering: fixed depth 3, captures-then-generation order. */
+  'legacy-hard': preset({ depth: 3, nodeBudget: 40_000, branchCap: 14, ordering: 'mvv' }),
+  /** Legacy hard with only the ordering changed — isolates the ordering fix. */
+  'ordered-hard': preset({ depth: 3, nodeBudget: 40_000, branchCap: 14 }),
+  ...Object.fromEntries(
+    (['medium', 'hard', 'expert'] as const).map((d) => {
+      const p = DIFFICULTIES[d];
+      return [d, preset({
+        depth: p.depth, nodeBudget: p.nodeBudget, branchCap: p.branchCap, iterative: p.iterative,
+      })];
+    }),
+  ),
+};
+const pickPreset = (name: string | undefined, fallback: Picker): Picker => {
+  if (name === undefined) return fallback;
+  const p = PRESETS[name];
+  if (p === undefined) throw new Error(`unknown preset ${name}; have ${Object.keys(PRESETS)}`);
+  return p;
+};
+const CANDIDATE = pickPreset(flag('candidate'), candidate);
+const INCUMBENT = pickPreset(flag('incumbent'), incumbent);
+
 interface Tally {
   games: number;
   wins: number;
@@ -89,7 +134,7 @@ let totalPlies = 0;
 /** Per-game (candidate − incumbent-average) differentials, for the significance test. */
 const diffs: number[] = [];
 
-for (let g = 0; g < GAMES; g++) {
+for (let g = START; g < START + GAMES; g++) {
   // Rotate the candidate through every seat; the other three run the incumbent.
   const candidateSeat: Army = ARMIES[g % 4];
   const game = Game.create(FFA_RULES);
@@ -98,7 +143,7 @@ for (let g = 0; g < GAMES; g++) {
   let plies = 0;
   while (!game.result().over && plies < MAX_PLIES) {
     const turn = game.pos.turn;
-    const picker = turn === candidateSeat ? candidate : incumbent;
+    const picker = turn === candidateSeat ? CANDIDATE : INCUMBENT;
     const move = picker(game.pos, turn, (baseSeed ^ (plies * 2654435761)) >>> 0);
     if (move === null) break;
     game.play(move);
@@ -125,10 +170,10 @@ for (let g = 0; g < GAMES; g++) {
   tally.incumbent.rivalPoints += candPts;
   if (winners.some((w) => w !== candidateSeat)) tally.incumbent.wins++;
 
-  if ((g + 1) % 8 === 0) {
+  if ((g + 1 - START) % 8 === 0) {
     const secs = Number(process.hrtime.bigint() - started) / 1e9;
     console.log(
-      `  game ${g + 1}/${GAMES}  candidate wins ${tally.candidate.wins}  ` +
+      `  game ${g + 1 - START}/${GAMES}  candidate wins ${tally.candidate.wins}  ` +
       `avg pts ${(tally.candidate.points / tally.candidate.games).toFixed(1)} vs ` +
       `${(tally.candidate.rivalPoints / tally.candidate.games).toFixed(1)}  (${secs.toFixed(0)}s)`,
     );
@@ -164,4 +209,7 @@ if (Math.abs(t) <= 2) {
   console.log('RESULT: candidate significantly outperforms the incumbent at equal budget.');
 } else {
   console.log('RESULT: candidate is significantly WORSE. Reject.');
+}
+if (process.argv.includes('--json')) {
+  console.log(`JSON ${JSON.stringify({ diffs, wins: tally.candidate.wins, games: GAMES })}`);
 }

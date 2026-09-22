@@ -341,8 +341,9 @@ function applyStep(step: Step): void {
 
 /**
  * Bot turns. A short "think" delay keeps bot moves legible — instant replies read as chaos
- * when three bots move back to back. Search itself is synchronous and budgeted to stay well
- * under a frame-budget-friendly ~40ms at the hard tier.
+ * when three bots move back to back. Search runs in the worker when available: ~0.4s per move
+ * at hard and ~1.5s at expert on a desktop core, so only the worker-less fallback below
+ * blocks the UI thread, and only for as long as the tier's search takes.
  */
 function scheduleBot(): void {
   if (botTimer !== null || game.result().over) return;
