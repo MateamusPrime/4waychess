@@ -108,6 +108,11 @@ interface DifficultyParams {
  * experiments live on in deep.ts / rollout.ts as arena-refuted baselines for future work;
  * the WORKER survives regardless (it is engine-agnostic), which means budgets here can grow
  * with hardware headroom rather than UI-thread politeness.
+ *
+ * What DID buy strength is spending the classic budget on the right moves: threat-aware
+ * ordering plus a root that ranks every legal move (61.5% wins vs the old Hard at identical
+ * depth and cap), and iterative deepening so the budget rather than a fixed depth sets the
+ * horizon (new Hard: 70.8% wins, +37 points per game vs the old Hard; ROADMAP Phase 2.5).
  */
 export const DIFFICULTIES: Readonly<Record<Difficulty, DifficultyParams>> = {
   easy: {

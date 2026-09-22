@@ -184,7 +184,8 @@ instruction, and wants to play again. If that is not true, do not proceed.
       rotated. Doubles as the skeleton of the Lever-2 self-play tuner.
 - [x] Bot search moved off the UI thread into a Web Worker; replies re-validated on the main
       thread against its own legal moves (the worker is compute, never authority).
-- [x] Easy stays on the classic engine (the on-ramp opponent); medium and hard use deep.
+- [x] ~~Easy stays on the classic engine; medium and hard use deep.~~ Superseded: the arena
+      refuted every deep variant, and all tiers ship on classic max-n (see below).
 
 ### What Lever 1 taught us — every variant measured, every variant rejected
 
@@ -269,6 +270,40 @@ you can respond. Candidate improvement, unvalidated.
 Remaining strength levers: larger worker budgets (the worker means bot thinking no longer
 competes with the UI thread), and eventually Lever 3 (learned eval over the game corpus that
 Phase 3 persistence is now accumulating).
+
+### Lever 1, revisited — ordering and iterative deepening (shipped)
+
+Profiling the SHIPPED classic search found two defects that no variant above addressed:
+
+- **The cut was blind.** `orderMoves` sorted captures first and left quiet moves in
+  generation order, and search kept the first `branchCap` — at the root too. In quiet
+  positions Hard chose among an arbitrary slice of its moves (the first 14 of 20-40, by board
+  scan), so the right move was often never examined.
+- **The budget was idle.** Hard used ~3k of its 40k nodes: fixed depth 3 stopped first, so
+  the third opponent's reply — where the three-plies-away recapture lives — was never seen.
+  (Throughput is ~25-30 nodes/ms, not the ~1k assumed in `search.ts`: `evaluate` ≈ 37µs,
+  `generateLegal` ≈ 44µs.)
+
+Fixes: `orderByThreat` (captures by victim minus risk, rescues of attacked pieces,
+promotions, penalty for stepping onto attacked squares — one enemy attack-map union per
+node), a root that ranks EVERY legal move by static utility before the cut, and iterative
+deepening with the node budget as the real limiter. Arena, candidate in one rotating seat vs
+three incumbents, temperature 0.4:
+
+| Candidate vs incumbent | Games | Wins (baseline 25%) | Mean differential | t |
+|---|---|---|---|---|
+| Ordering only (same depth 3 / cap 14) vs legacy Hard | 96 | 61.5% | +31.7 ± 4.2 | 7.5 |
+| New Hard (ID, depth ≤ 4, 30k) vs legacy Hard | 96 | 70.8% | +37.2 ± 4.0 | 9.3 |
+| Expert (ID, depth ≤ 5, 120k) vs new Hard | — | run in progress | — | — |
+
+Ordering alone is most of the gain, at no extra cost — the earlier variants all spent the
+budget differently; none of them fixed WHICH moves the budget was spent on. Reproduce with
+`node src/tools/arena-cli.ts 24 --candidate=hard --incumbent=legacy-hard --start=0 --json`
+(shard with `--start`; per-game differentials merge across shards).
+
+Tiers now: Easy and Medium unchanged in depth (they gain the ordering); Hard iterates to
+depth 4 on 30k nodes (~0.4s/move on a desktop core); new **Expert** iterates to depth 5 on
+120k nodes (~1.4s/move). Both run in the worker.
 
 ### What building it taught us
 
