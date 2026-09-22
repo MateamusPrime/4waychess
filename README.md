@@ -85,6 +85,7 @@ Three that are more subtle than they look:
 packages/
   engine/        pure TS rules engine. zero deps.
   bots/          heuristic evaluation + shallow max-n search, by personality
+  advisor/       standard-chess training advisor on Stockfish (MultiPV, grading, review)
   board-render/  Skia drawing layer, shared web and mobile
   ui-core/       framework-free view model
   pieces/  rating/  store/
