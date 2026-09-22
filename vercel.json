@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "npm install",
-  "buildCommand": "npm run build -w @4wc/web && npm run build -w @4wc/trainer && rm -rf build && mkdir -p build/trainer && cp apps/web/index.html build/ && cp -r apps/web/dist build/dist && cp apps/trainer/index.html build/trainer/ && cp -r apps/trainer/dist build/trainer/dist && cp -r apps/trainer/vendor build/trainer/vendor",
+  "buildCommand": "npm run build:site",
   "outputDirectory": "build"
 }
