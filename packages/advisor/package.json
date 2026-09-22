@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Standard-chess training advisor on top of Stockfish: MultiPV candidates, move grading, trap detection, sparring, and game review.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts"
   },
   "bin": {
     "advisor": "./src/tools/advisor-cli.ts"

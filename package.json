@@ -15,6 +15,7 @@
     "test:engine": "npm run test -w @4wc/engine",
     "perft": "npm run perft -w @4wc/engine",
     "advisor": "node packages/advisor/src/tools/advisor-cli.ts",
-    "test:advisor": "npm run test -w @4wc/advisor"
+    "test:advisor": "npm run test -w @4wc/advisor",
+    "trainer": "npm run dev -w @4wc/trainer"
   }
 }

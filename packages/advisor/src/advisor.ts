@@ -14,7 +14,7 @@
 
 import { Chess } from 'chess.js';
 import type { Move } from 'chess.js';
-import type { GoLimits, Score, SearchLine, UciEngine } from './uci.ts';
+import type { GoLimits, InfoLine, Score, SearchLine, UciEngine } from './uci.ts';
 import {
   classify, cpLoss, formatScore, moveAccuracy, negate, terminalScore, toWhite, winPct,
 } from './score.ts';
@@ -28,14 +28,16 @@ export interface AdvisorOptions {
   limits?: GoLimits;
   /**
    * Depth of the quick "how it looks at a glance" search used for trap detection. 0 (default)
-   * disables it. 5-7 is the useful range: deep enough to see a capture, shallow enough to miss
-   * the refutation.
+   * disables it. 3-5 is the useful range: deep enough to see a capture, shallow enough to miss
+   * the refutation. Stockfish sees through most classic baits by depth 6.
    */
   trapDepth?: number;
   /** Win-percentage drop between shallow and deep verdicts that makes a move a trap. Default 10. */
   trapThreshold?: number;
   /** Start position as FEN. Default: the initial position. */
   fen?: string;
+  /** Receives every info line of the main (deep) search, for live progress display. */
+  onInfo?: (info: InfoLine, fen: string) => void;
 }
 
 export interface Candidate {
@@ -152,6 +154,11 @@ export function toUci(m: Move): string {
   return m.from + m.to + (m.promotion ?? '');
 }
 
+/** Thrown by `analyse()` / `play()` when `abort()` was called while they were running. */
+export class AnalysisAborted extends Error {
+  constructor() { super('analysis aborted'); this.name = 'AnalysisAborted'; }
+}
+
 export class Advisor {
   readonly engine: UciEngine;
   readonly game: Chess;
@@ -160,10 +167,13 @@ export class Advisor {
   limits: GoLimits;
   trapDepth: number;
   trapThreshold: number;
-  readonly startFen: string;
+  onInfo: AdvisorOptions['onInfo'];
+  /** The position the engine is fed before the move list; changes on `reset(fen)`. */
+  startFen: string;
   private cache = new Map<string, Analysis>();
   private engineMultipv = -1;
   private busy: Promise<unknown> = Promise.resolve();
+  private epoch = 0;
 
   constructor(opts: AdvisorOptions) {
     this.engine = opts.engine;
@@ -171,6 +181,7 @@ export class Advisor {
     this.limits = opts.limits ?? { depth: 18 };
     this.trapDepth = opts.trapDepth ?? 0;
     this.trapThreshold = opts.trapThreshold ?? 10;
+    this.onInfo = opts.onInfo;
     this.startFen = opts.fen ?? new Chess().fen();
     this.game = new Chess(this.startFen);
   }
@@ -181,16 +192,37 @@ export class Advisor {
   /** Moves played so far, in UCI. */
   moves(): string[] { return this.game.history({ verbose: true }).map(toUci); }
 
-  /** Start over, optionally from a FEN. Reports are cleared. */
+  /** Start over, optionally from a new start FEN. Reports are cleared. */
   reset(fen?: string): void {
-    this.game.load(fen ?? this.startFen);
+    if (fen !== undefined) this.startFen = fen;
+    this.game.load(this.startFen);
     this.reports.length = 0;
     this.cache.clear();
   }
 
+  /** Resolves once every queued analysis has finished. */
+  idle(): Promise<void> {
+    return this.busy.then(() => undefined);
+  }
+
+  /**
+   * Cut short whatever analysis is running: the current search is stopped and the chain of
+   * searches behind `analyse()` (glance, deep, trap follow-ups) exits with `AnalysisAborted`
+   * instead of continuing. Queued calls made after this still run.
+   */
+  abort(): void {
+    this.epoch++;
+    this.engine.stop();
+  }
+
+  private checkpoint(epoch: number): void {
+    if (epoch !== this.epoch) throw new AnalysisAborted();
+  }
+
   /** Analyse the current position (cached per FEN and settings). */
   analyse(): Promise<Analysis> {
-    const run = this.busy.then(() => this.analyseNow());
+    const epoch = this.epoch; // an abort() between now and the start of the work aborts it too
+    const run = this.busy.then(() => this.analyseNow(epoch));
     this.busy = run.catch(() => undefined);
     return run;
   }
@@ -206,7 +238,8 @@ export class Advisor {
     }
   }
 
-  private async analyseNow(): Promise<Analysis> {
+  private async analyseNow(epoch: number): Promise<Analysis> {
+    this.checkpoint(epoch);
     const fen = this.game.fen();
     const key = this.cacheKey(fen);
     const hit = this.cache.get(key);
@@ -237,12 +270,14 @@ export class Advisor {
       if (this.engine.hasOption('Clear Hash')) await this.engine.pressButton('Clear Hash');
       this.engine.position(this.startFen, this.moves());
       shallow = (await this.engine.go({ depth: this.trapDepth })).lines;
+      this.checkpoint(epoch);
     }
 
     this.engine.position(this.startFen, this.moves());
-    const deep = await this.engine.go(this.limits);
+    const deep = await this.engine.go(this.limits, this.onInfo && ((info) => this.onInfo?.(info, fen)));
+    this.checkpoint(epoch);
     const candidates = deep.lines.map((l, i) => this.toCandidate(l, i + 1, fen, turn, deep.lines[0]));
-    const traps = shallow.length ? await this.findTraps(fen, shallow, candidates) : [];
+    const traps = shallow.length ? await this.findTraps(fen, shallow, candidates, epoch) : [];
 
     const best = candidates[0] ?? null;
     const score = best?.score ?? { type: 'cp', value: 0 };
@@ -272,7 +307,7 @@ export class Advisor {
    * `trapThreshold` win-percentage points against the deep best. To score a shallow favourite
    * that the deep MultiPV list did not cover, it is searched once with MultiPV 1 at full depth.
    */
-  private async findTraps(fen: string, shallow: SearchLine[], deep: Candidate[]): Promise<Trap[]> {
+  private async findTraps(fen: string, shallow: SearchLine[], deep: Candidate[], epoch: number): Promise<Trap[]> {
     const n = Math.min(this.multipv, this.game.moves().length);
     const deepBestPct = deep[0]?.winPct ?? 50;
     const traps: Trap[] = [];
@@ -297,7 +332,8 @@ export class Advisor {
         } else {
           await this.ensureMultipv(1);
           this.engine.position(this.startFen, [...this.moves(), uci]);
-          const reply = await this.engine.go(this.limits);
+          const reply = await this.engine.go(this.trapLimits());
+          this.checkpoint(epoch);
           const replyLine = reply.lines[0];
           deepScore = replyLine ? negate(replyLine.score) : { type: 'cp', value: 0 };
           deepPct = replyLine ? 100 - winPct(replyLine.score) : 50;
@@ -316,6 +352,14 @@ export class Advisor {
     return traps;
   }
 
+  /** Trap follow-ups are MultiPV 1 on one move; a third of the main budget is plenty. */
+  private trapLimits(): GoLimits {
+    const l = this.limits;
+    if (l.movetime !== undefined) return { movetime: Math.max(150, Math.round(l.movetime / 3)) };
+    if (l.nodes !== undefined) return { nodes: Math.max(10_000, Math.round(l.nodes / 3)) };
+    return l;
+  }
+
   /**
    * Play a move (SAN or UCI) and grade it. The grade compares the mover's win probability before
    * the move with their win probability in the resulting position, as the engine sees it.
@@ -328,7 +372,14 @@ export class Advisor {
     } catch {
       throw new Error(`illegal move "${move}" in ${before.fen}`);
     }
-    const after = await this.analyse();
+    let after: Analysis;
+    try {
+      after = await this.analyse();
+    } catch (err) {
+      // Keep game and reports consistent: an aborted grade means the move was not played.
+      this.game.undo();
+      throw err;
+    }
     // "mate 0" carries no sign, so the mover's chances come from the reply side's, not from
     // negating the score. A delivered mate is 100%, a stalemate 50%.
     const scoreAfter = negate(after.score);

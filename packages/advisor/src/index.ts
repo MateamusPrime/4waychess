@@ -9,8 +9,9 @@
  * assistance as cheating, in rated and casual games alike.
  */
 
-export type { Score, InfoLine, GoLimits, SearchLine, SearchOutcome, UciOption, EngineIdentity } from './uci.ts';
-export { UciEngine, parseInfo, parseOption } from './uci.ts';
+export type { Score, InfoLine, GoLimits, SearchLine, SearchOutcome, UciOption, EngineIdentity, UciTransport } from './uci.ts';
+export { UciEngine, parseInfo, parseOption, selectLines } from './uci.ts';
+export { processTransport, spawnEngine } from './node-process.ts';
 
 export type { EngineSpec, EngineCommand, WasmFlavor } from './engine.ts';
 export { openEngine, resolveEngineCommand, wasmEngineFile } from './engine.ts';
@@ -24,7 +25,7 @@ export {
 export type {
   AdvisorOptions, Analysis, Candidate, MoveReport, SideSummary, Summary, Trap,
 } from './advisor.ts';
-export { Advisor, formatCandidate, fromUci, toUci } from './advisor.ts';
+export { Advisor, AnalysisAborted, formatCandidate, fromUci, toUci } from './advisor.ts';
 
 export type { Review, ReviewOptions } from './review.ts';
 export { formatReport, formatReview, formatSummary, reviewPgn, splitPgn } from './review.ts';

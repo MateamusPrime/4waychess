@@ -82,6 +82,10 @@ await engine.quit();
 `reviewPgn(pgn, { engine, ... })` grades a whole game; `fetchLichessGames` and
 `fetchChesscomGames` download recent games as PGN.
 
+In the browser, import from `@4wc/advisor/browser`: the same `Advisor`, with
+`openWorkerEngine(url)` driving a WASM Stockfish in a Web Worker instead of a child process.
+`apps/trainer` is the live UI built on that: play, get graded as you go, ask for hints.
+
 ## What it is not
 
 Do not use this during a game against another person, online or over the board, rated or
@@ -94,14 +98,16 @@ with hints on.
 
 ```
 src/
-  uci.ts        UCI client over a child process; works for native and WASM Stockfish
+  uci.ts        UCI client over a line transport, no platform imports
+  node-process.ts  child-process transport: native binary or the WASM build under Node
+  browser.ts    Web Worker transport and the browser-safe exports
   engine.ts     locating a Stockfish (native path or the `stockfish` npm package) and options
   score.ts      pure arithmetic: perspectives, win probability, classification, accuracy
   advisor.ts    the Advisor: live game, MultiPV analysis, move grading, trap detection
   review.ts     PGN review and text formatting
   fetch.ts      Lichess and chess.com game download
   tools/advisor-cli.ts
-test/           27 tests; the engine ones run the bundled WASM Stockfish at low depth
+test/           29 tests; the engine ones run the bundled WASM Stockfish at low depth
 ```
 
 Stockfish is GPL-3.0; the `stockfish` npm package bundles it as WASM. chess.js (BSD-2) handles

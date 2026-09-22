@@ -1,15 +1,12 @@
 /**
- * Minimal UCI client over a child process.
+ * Minimal UCI client over a line transport.
  *
- * Works unchanged against a native Stockfish binary and against the WASM build from the
- * `stockfish` npm package (which, run under Node, reads stdin and writes stdout exactly like
- * the native engine). One search at a time; `go` resolves on `bestmove`.
+ * The transport is a child process in Node (`node-process.ts`: a native Stockfish binary, or
+ * the WASM build from the `stockfish` npm package, which reads stdin and writes stdout exactly
+ * like the native engine) or a Web Worker in the browser (`browser.ts`). This file has no
+ * platform imports so the same client runs in both. One search at a time; `go` resolves on
+ * `bestmove`.
  */
-
-import { spawn } from 'node:child_process';
-import type { ChildProcessByStdio } from 'node:child_process';
-import { createInterface } from 'node:readline';
-import type { Readable, Writable } from 'node:stream';
 
 export type Score = { type: 'cp'; value: number } | { type: 'mate'; value: number };
 
@@ -100,6 +97,8 @@ export interface SearchLine {
   seldepth?: number;
   /** From the side to move's perspective, as UCI specifies. */
   score: Score;
+  /** Set when the score is an aspiration-window bound rather than an exact value. */
+  bound?: 'lower' | 'upper';
   pv: string[];
   wdl?: [number, number, number];
 }
@@ -108,60 +107,84 @@ export interface SearchOutcome {
   /** `null` when the engine reports `(none)`: no legal moves. */
   bestmove: string | null;
   ponder?: string;
-  /** Sorted by multipv rank, all from the deepest fully reported iteration. */
+    /** The engine's final ranking, one line per MultiPV slot, best first. */
   lines: SearchLine[];
+  /** The shallowest depth among `lines`: the depth to which the whole ranking is settled. */
   depth: number;
   nodes: number;
   timeMs: number;
 }
 
-type Proc = ChildProcessByStdio<Writable, Readable, null>;
+/**
+ * Pick the lines to report from the engine's last print batch.
+ *
+ * Stockfish reprints every MultiPV slot each time one finishes, in its current ranking. Mid
+ * iteration that batch mixes depths (slot 1 at depth D+1, the rest still at D with re-sorted
+ * order), which is exactly why grouping lines by depth is wrong: the depth-D slots get
+ * overwritten with the new order and one move lands in two slots. The latest batch is the
+ * ranking `bestmove` comes from, so it is the truth. Moves are deduplicated as a guard,
+ * `bestmove` is put first if the batch disagrees, and ranks are renumbered.
+ */
+export function selectLines(snapshot: SearchLine[], bestmove: string | null): { lines: SearchLine[]; depth: number } {
+  const ordered = [...snapshot].sort((a, b) => a.multipv - b.multipv);
+  const seen = new Set<string>();
+  let lines = ordered.filter((l) => { const m = l.pv[0]; if (seen.has(m)) return false; seen.add(m); return true; });
+  if (bestmove && lines.length && lines[0].pv[0] !== bestmove) {
+    const i = lines.findIndex((l) => l.pv[0] === bestmove);
+    if (i > 0) lines = [lines[i], ...lines.slice(0, i), ...lines.slice(i + 1)];
+  }
+  lines = lines.map((l, i) => ({ ...l, multipv: i + 1 }));
+  const depth = lines.length ? Math.min(...lines.map((l) => l.depth)) : 0;
+  return { lines, depth };
+}
+
+/** A line-oriented duplex channel to an engine. */
+export interface UciTransport {
+  send(line: string): void;
+  /** Called once per output line. */
+  onLine(cb: (line: string) => void): void;
+  /** Called if the engine dies unexpectedly. */
+  onExit(cb: (err: Error) => void): void;
+  /** Tear down after `quit` has been sent (or when the engine is unresponsive). */
+  close(): Promise<void>;
+}
+
 type Listener = (line: string) => void;
 
+const EXIT = '\u0000exit';
+
 export class UciEngine {
-  readonly proc: Proc;
   readonly identity: EngineIdentity;
-  /** Every line the engine has printed, kept for debugging. Bounded. */
+  private readonly transport: UciTransport;
   private listeners: Listener[] = [];
   private searching = false;
   private closed = false;
+  private quitting = false;
   private exitError: Error | null = null;
 
-  private constructor(proc: Proc, identity: EngineIdentity) {
-    this.proc = proc;
-    this.identity = identity;
+  private constructor(transport: UciTransport) {
+    this.transport = transport;
+    this.identity = { name: '', author: '', options: new Map() };
   }
 
-  /** Spawn `command args...`, complete the UCI handshake, and return a ready engine. */
-  static async spawn(command: string, args: string[] = []): Promise<UciEngine> {
-    const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
-    const identity: EngineIdentity = { name: '', author: '', options: new Map() };
-    const engine = new UciEngine(proc, identity);
-
-    const rl = createInterface({ input: proc.stdout });
-    rl.on('line', (line) => { for (const l of [...engine.listeners]) l(line); });
-    proc.on('exit', (code, signal) => {
+  /** Complete the UCI handshake over `transport` and return a ready engine. */
+  static async connect(transport: UciTransport): Promise<UciEngine> {
+    const engine = new UciEngine(transport);
+    transport.onLine((line) => { for (const l of [...engine.listeners]) l(line); });
+    transport.onExit((err) => {
       engine.closed = true;
       if (!engine.quitting) {
-        engine.exitError = new Error(`engine exited (code ${code}, signal ${signal})`);
-        for (const l of [...engine.listeners]) l('\u0000exit');
+        engine.exitError = err;
+        for (const l of [...engine.listeners]) l(EXIT);
       }
     });
-    proc.on('error', (err) => {
-      engine.closed = true;
-      engine.exitError = err;
-      for (const l of [...engine.listeners]) l('\u0000exit');
-    });
-
     await engine.handshake();
     return engine;
   }
 
-  private quitting = false;
-
   private send(cmd: string): void {
     if (this.closed) throw this.exitError ?? new Error('engine is closed');
-    this.proc.stdin.write(cmd + '\n');
+    this.transport.send(cmd);
   }
 
   private listen(listener: Listener): () => void {
@@ -172,7 +195,7 @@ export class UciEngine {
   private waitFor(pred: (line: string) => boolean, onLine?: Listener): Promise<string> {
     return new Promise((resolve, reject) => {
       const off = this.listen((line) => {
-        if (line === '\u0000exit') { off(); reject(this.exitError); return; }
+        if (line === EXIT) { off(); reject(this.exitError); return; }
         onLine?.(line);
         if (pred(line)) { off(); resolve(line); }
       });
@@ -226,15 +249,14 @@ export class UciEngine {
   }
 
   /**
-   * Run one search. MultiPV must have been set via `setOption` beforehand. Lines come from the
-   * deepest iteration at which every MultiPV slot reported, so ranks are mutually comparable.
+   * Run one search. MultiPV must have been set via `setOption` beforehand. Lines are the
+   * engine's final ranking (see `selectLines`).
    */
   async go(limits: GoLimits, onInfo?: (info: InfoLine) => void): Promise<SearchOutcome> {
     if (this.searching) throw new Error('a search is already running');
     this.searching = true;
 
-    const byDepth = new Map<number, Map<number, SearchLine>>();
-    let maxSlot = 1;
+    const snapshot = new Map<number, SearchLine>();
     let nodes = 0;
     let timeMs = 0;
 
@@ -251,14 +273,12 @@ export class UciEngine {
       if (info.nodes !== undefined) nodes = info.nodes;
       if (info.time !== undefined) timeMs = info.time;
       if (info.depth === undefined || info.score === undefined || !info.pv?.length) return;
-      if (info.bound) return; // aspiration-window fail high/low: not a real score
+      // A bound line still carries the current ranking, so it replaces the slot; the score is
+      // marked approximate and an exact print for the slot normally follows.
       const slot = info.multipv ?? 1;
-      if (slot > maxSlot) maxSlot = slot;
-      let at = byDepth.get(info.depth);
-      if (!at) { at = new Map(); byDepth.set(info.depth, at); }
-      at.set(slot, {
+      snapshot.set(slot, {
         multipv: slot, depth: info.depth, seldepth: info.seldepth, score: info.score,
-        pv: info.pv, wdl: info.wdl,
+        bound: info.bound, pv: info.pv, wdl: info.wdl,
       });
     });
 
@@ -266,24 +286,9 @@ export class UciEngine {
       this.send(parts.join(' '));
       const best = await done;
       const [, bm, , ponder] = best.split(/\s+/);
-      const depths = [...byDepth.keys()].sort((a, b) => b - a);
-      let chosen = depths.find((d) => byDepth.get(d)!.size >= maxSlot) ?? depths[0];
-      const lines = chosen === undefined
-        ? []
-        : [...byDepth.get(chosen)!.values()].sort((a, b) => a.multipv - b.multipv);
-      // If the iteration we chose is stale for slot 1 relative to bestmove, trust bestmove.
-      if (bm && bm !== '(none)' && lines.length && lines[0].pv[0] !== bm) {
-        const newer = depths.map((d) => byDepth.get(d)!.get(1)).find((l) => l && l.pv[0] === bm);
-        if (newer) lines[0] = newer;
-      }
-      return {
-        bestmove: bm === '(none)' || bm === undefined ? null : bm,
-        ponder,
-        lines,
-        depth: chosen ?? 0,
-        nodes,
-        timeMs,
-      };
+      const bestmove = bm === '(none)' || bm === undefined ? null : bm;
+      const { lines, depth } = selectLines([...snapshot.values()], bestmove);
+      return { bestmove, ponder, lines, depth, nodes, timeMs };
     } finally {
       this.searching = false;
     }
@@ -297,11 +302,8 @@ export class UciEngine {
   async quit(): Promise<void> {
     if (this.closed) return;
     this.quitting = true;
-    const exited = new Promise<void>((resolve) => this.proc.once('exit', () => resolve()));
     try { this.send('quit'); } catch { /* already gone */ }
-    const timer = setTimeout(() => this.proc.kill(), 2000);
-    await exited;
-    clearTimeout(timer);
     this.closed = true;
+    await this.transport.close();
   }
 }

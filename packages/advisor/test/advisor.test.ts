@@ -88,6 +88,40 @@ describe('advisor', () => {
     assert.ok(s.b.accuracy > s.w.accuracy);
   });
 
+  test('reset to a FEN analyses that position, not the original start', async () => {
+    const adv = new Advisor({ engine, multipv: 2, limits: { depth: 6 } });
+    await adv.play('e4');
+    adv.reset('k7/8/1K6/8/8/8/8/7R b - - 0 1');
+    assert.equal(adv.ply(), 0);
+    assert.equal(adv.reports.length, 0);
+    const a = await adv.analyse();
+    assert.equal(a.turn, 'b');
+    assert.deepEqual(a.candidates.map((c) => c.san), ['Kb8']);
+    await adv.play('Kb8');
+    const mate = await adv.play('Rh8#');
+    assert.equal(mate.winPctAfter, 100);
+    adv.reset();
+    assert.equal(adv.fen(), 'k7/8/1K6/8/8/8/8/7R b - - 0 1');
+  });
+
+  test('abort cuts a running analysis short and leaves the game consistent', async () => {
+    const adv = new Advisor({ engine, multipv: 3, limits: { movetime: 3000 }, trapDepth: 3 });
+    const first = adv.analyse();
+    adv.abort();
+    await assert.rejects(first, (e: Error) => e.name === 'AnalysisAborted');
+    // A play whose grading is aborted is rolled back.
+    const p = adv.play('e4');
+    await new Promise((r) => setTimeout(r, 30));
+    adv.abort();
+    await assert.rejects(p, (e: Error) => e.name === 'AnalysisAborted');
+    assert.equal(adv.ply(), 0);
+    assert.equal(adv.reports.length, 0);
+    // Subsequent calls work normally.
+    adv.limits = { depth: 6 };
+    const a = await adv.analyse();
+    assert.equal(a.candidates.length, 3);
+  });
+
   test('rejects illegal moves without changing state', async () => {
     const adv = new Advisor({ engine, multipv: 1, limits: { depth: 4 } });
     await assert.rejects(() => adv.play('Ke2'), /illegal move/);

@@ -91,6 +91,7 @@ packages/
   pieces/  rating/  store/
 apps/
   web/           web client
+  trainer/       live move trainer for standard chess, Stockfish in a Web Worker (/trainer on the deploy)
 docs/
   RULES.md       the full ruleset specification
   ARCHITECTURE.md  decision register with status per decision

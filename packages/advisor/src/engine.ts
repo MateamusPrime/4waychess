@@ -12,7 +12,8 @@
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-import { UciEngine } from './uci.ts';
+import type { UciEngine } from './uci.ts';
+import { spawnEngine } from './node-process.ts';
 
 export type WasmFlavor = 'lite-single' | 'lite' | 'single' | 'full';
 
@@ -57,7 +58,7 @@ export function resolveEngineCommand(spec: EngineSpec = {}): EngineCommand {
 /** Spawn, handshake, and apply the options in `spec`. MultiPV is left to the caller. */
 export async function openEngine(spec: EngineSpec = {}): Promise<UciEngine> {
   const { command, args } = resolveEngineCommand(spec);
-  const engine = await UciEngine.spawn(command, args);
+  const engine = await spawnEngine(command, args);
   const opt = engine.identity.options;
   if (spec.threads !== undefined && opt.has('Threads')) {
     const max = opt.get('Threads')!.max ?? 1;
