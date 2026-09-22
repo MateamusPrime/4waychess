@@ -85,11 +85,13 @@ Three that are more subtle than they look:
 packages/
   engine/        pure TS rules engine. zero deps.
   bots/          heuristic evaluation + shallow max-n search, by personality
+  advisor/       standard-chess training advisor on Stockfish (MultiPV, grading, review)
   board-render/  Skia drawing layer, shared web and mobile
   ui-core/       framework-free view model
   pieces/  rating/  store/
 apps/
   web/           web client
+  trainer/       live move trainer for standard chess, Stockfish in a Web Worker (/trainer on the deploy)
 docs/
   RULES.md       the full ruleset specification
   ARCHITECTURE.md  decision register with status per decision
