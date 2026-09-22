@@ -294,7 +294,7 @@ three incumbents, temperature 0.4:
 |---|---|---|---|---|
 | Ordering only (same depth 3 / cap 14) vs legacy Hard | 96 | 61.5% | +31.7 ± 4.2 | 7.5 |
 | New Hard (ID, depth ≤ 4, 30k) vs legacy Hard | 96 | 70.8% | +37.2 ± 4.0 | 9.3 |
-| Expert (ID, depth ≤ 5, 120k) vs new Hard | — | run in progress | — | — |
+| Expert (ID, depth ≤ 5, 120k) vs new Hard | 48 | 37.5% | +18.1 ± 5.8 | 3.1 |
 
 Ordering alone is most of the gain, at no extra cost — the earlier variants all spent the
 budget differently; none of them fixed WHICH moves the budget was spent on. Reproduce with
