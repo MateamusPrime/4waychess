@@ -11,7 +11,7 @@ import {
 } from '@4wc/engine';
 import type { Army, Move, Position } from '@4wc/engine';
 import {
-  DIFFICULTIES, makeBot, makeRng, pickMove, reviewMove, suggestMove, uniformWeights,
+  makeBot, makeRng, pickMove, reviewMove, suggestMove, uniformWeights,
 } from '@4wc/bots';
 import type { Difficulty, Grade, PersonalityId } from '@4wc/bots';
 
@@ -50,23 +50,20 @@ function position(fen: string, mode: 'ffa' | 'teams'): Position {
 }
 
 /* ------------------------------------------------------------------ *
- * Device-sized budgets
+ * Device speed (hints only)
  * ------------------------------------------------------------------ */
 
 /**
- * How long a tier may think, in milliseconds, for tiers that trade depth for speed.
+ * Every difficulty tier is defined by DEPTH, not time: each tier's node budget always
+ * completes its depth (Hard: depth 4 at branch cap 10, at most ~12.4k nodes; Expert: depth 5
+ * at cap 8, ~43k — bounds that hold in any position, see bots.test.ts). So a bot plays the same
+ * move on every device and a slow phone simply waits longer. Tiers used to be capped at a
+ * thinking time instead, which silently made Hard a depth-3 bot on phones.
  *
- * Node budgets alone make thinking time scale with the device. The bots package has no clock
- * (its purity test forbids one), so the host measures its own speed once and converts a time
- * target into nodes. Ceilings stay at the arena-validated budgets, so a fast machine never
- * searches more than what was measured; floors keep a slow device at a useful depth.
- *
- * Expert is deliberately absent: it is defined by DEPTH, not time. Its tier budget always
- * completes depth 5 (at branch cap 8 a depth-5 search needs ~43k nodes in any position), so it
- * plays identically on every device — a slow phone simply waits longer for the same move.
+ * Hints are the one exception: a hint is a convenience, not an opponent, so it thinks for a
+ * fixed ~0.8s. The bots package has no clock (its purity test forbids one), so the host
+ * measures its own speed once and converts that time into nodes.
  */
-export const THINK_MS: Partial<Record<Difficulty, number>> = { hard: 800 };
-const FLOOR: Partial<Record<Difficulty, number>> = { hard: 3_000 };
 const HINT_MS = 800;
 
 let measured: number | null = null;
@@ -90,21 +87,13 @@ export function nodesPerMs(): number {
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
 
-/** The node budget for a tier on this device, or undefined to keep the tier's own budget. */
-export function budgetFor(difficulty: Difficulty): number | undefined {
-  const ms = THINK_MS[difficulty];
-  if (ms === undefined) return undefined; // easy/medium/expert: the tier's own depth budget
-  return Math.round(clamp(nodesPerMs() * ms, FLOOR[difficulty] ?? 0,
-    DIFFICULTIES[difficulty].nodeBudget));
-}
-
 /* ------------------------------------------------------------------ *
  * Handlers
  * ------------------------------------------------------------------ */
 
 export function computeMove(req: Extract<AnalysisRequest, { type: 'move' }>): AnalysisReply {
   const pos = position(req.fen, req.mode);
-  const bot = makeBot(req.kind, req.difficulty, req.seed, { nodeBudget: budgetFor(req.difficulty) });
+  const bot = makeBot(req.kind, req.difficulty, req.seed);
   const move = bot.pick(pos, req.army);
   return { type: 'move', id: req.id, army: req.army, move: move === null ? null : wire(move) };
 }

@@ -171,9 +171,8 @@ export function wantsResign(pos: Position, army: Army): boolean {
  * and `nodeBudget`.
  *
  * `nodeBudget` overrides the tier's budget. This package has no clock, so hosts that want a
- * TIME budget measure their own speed and convert (apps/web sizes Hard to the device, so a
- * phone thinks for about as long as a desktop; Expert keeps its budget and always searches to
- * depth 5, however long that takes).
+ * TIME budget measure their own speed and convert. apps/web deliberately does not: every
+ * tier is defined by depth, and its budget always completes that depth on any device.
  */
 export function makeBot(
   personality: PersonalityId,

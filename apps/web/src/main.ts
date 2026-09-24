@@ -31,7 +31,7 @@ import type { Bot, Difficulty, PersonalityId } from '@4wc/bots';
 import { localPersistence, storageKV } from '@4wc/store';
 import type { GameRecord, Profile, SeatRecord } from '@4wc/store';
 import { GameAudio } from './audio.ts';
-import { budgetFor, computeHint, reviewItem } from './analysis.ts';
+import { computeHint, reviewItem } from './analysis.ts';
 import type { AnalysisReply, AnalysisRequest, WireMove, WireVerdict } from './analysis.ts';
 
 /* ------------------------------------------------------------------ *
@@ -326,15 +326,12 @@ function humanSeats(): Army[] {
 }
 function rebuildBots(): void {
   bots = {};
-  // These bots only move in the worker-less fallback (and the e2e hook); the worker sizes its
-  // own budget. Calibrating here only when it will be used keeps boot free of a benchmark.
-  const nodeBudget = botWorker === null ? budgetFor(botDifficulty) : undefined;
   for (const a of ARMIES) {
     const kind = seatConfig[a];
     if (kind !== 'human') {
       const seed = (Date.now() ^ (ARMIES.indexOf(a) * 7919)) >>> 0;
       seatSeeds[a] = seed;
-      bots[a] = makeBot(kind, botDifficulty, seed, { nodeBudget });
+      bots[a] = makeBot(kind, botDifficulty, seed);
     }
   }
 }
