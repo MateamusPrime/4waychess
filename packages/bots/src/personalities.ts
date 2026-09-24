@@ -17,7 +17,7 @@ import { pickMoveDeep } from './deep.ts';
 import { makeRng } from './rng.ts';
 
 export type PersonalityId = 'aggressive' | 'turtle' | 'opportunist' | 'kingmaker';
-export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert';
 
 export interface Personality {
   id: PersonalityId;
@@ -91,6 +91,8 @@ interface DifficultyParams {
   replyCap: number;
   rolloutPlies: number;
   temperature: number;
+  /** Deepen until the node budget runs out, with `depth` as the ceiling. */
+  iterative: boolean;
 }
 
 /**
@@ -106,19 +108,28 @@ interface DifficultyParams {
  * experiments live on in deep.ts / rollout.ts as arena-refuted baselines for future work;
  * the WORKER survives regardless (it is engine-agnostic), which means budgets here can grow
  * with hardware headroom rather than UI-thread politeness.
+ *
+ * What DID buy strength is spending the classic budget on the right moves: threat-aware
+ * ordering plus a root that ranks every legal move (61.5% wins vs the old Hard at identical
+ * depth and cap), and iterative deepening so the budget rather than a fixed depth sets the
+ * horizon (new Hard: 70.8% wins, +37 points per game vs the old Hard; ROADMAP Phase 2.5).
  */
 export const DIFFICULTIES: Readonly<Record<Difficulty, DifficultyParams>> = {
   easy: {
     engine: 'classic', depth: 1, nodeBudget: 2_000, branchCap: 16,
-    replyCap: 0, rolloutPlies: 0, temperature: 2.2,
+    replyCap: 0, rolloutPlies: 0, temperature: 2.2, iterative: false,
   },
   medium: {
     engine: 'classic', depth: 2, nodeBudget: 12_000, branchCap: 18,
-    replyCap: 0, rolloutPlies: 0, temperature: 0.9,
+    replyCap: 0, rolloutPlies: 0, temperature: 0.9, iterative: false,
   },
   hard: {
-    engine: 'classic', depth: 3, nodeBudget: 40_000, branchCap: 14,
-    replyCap: 0, rolloutPlies: 0, temperature: 0,
+    engine: 'classic', depth: 4, nodeBudget: 30_000, branchCap: 10,
+    replyCap: 0, rolloutPlies: 0, temperature: 0, iterative: true,
+  },
+  expert: {
+    engine: 'classic', depth: 5, nodeBudget: 120_000, branchCap: 8,
+    replyCap: 0, rolloutPlies: 0, temperature: 0, iterative: true,
   },
 };
 
@@ -194,6 +205,7 @@ export function makeBot(
         branchCap: params.branchCap,
         temperature: params.temperature,
         rolloutPlies: params.rolloutPlies,
+        iterative: params.iterative,
         weights,
         rng,
       }).move;

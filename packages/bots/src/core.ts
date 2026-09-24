@@ -3,7 +3,7 @@
  * experimental deep engine. Split out so search.ts and rollout.ts need not import each other.
  */
 
-import { ARMIES, PIECE_VALUES, captureValue } from '@4wc/engine';
+import { ARMIES, NSQ, PIECE_VALUES, attackMap, captureValue } from '@4wc/engine';
 import type { Army, Move, Position } from '@4wc/engine';
 import type { Rng } from './rng.ts';
 
@@ -61,6 +61,56 @@ export function orderMoves(moves: Move[]): Move[] {
     }))
     .sort((a, b) => b.key - a.key)
     .map((e) => e.m);
+}
+
+const centrality = (s: number): number =>
+  1 - Math.max(Math.abs((s % 14) - 6.5), Math.abs(Math.floor(s / 14) - 6.5)) / 6.5;
+
+/**
+ * Threat-aware ordering for the classic search.
+ *
+ * orderMoves leaves every quiet move in GENERATION order, and the search keeps only the first
+ * `branchCap` — so at a quiet node the bot chose among an arbitrary slice of its moves (the
+ * first 14 of 20-40, sorted by board scan) and could simply never look at the right one. A
+ * hard bot that walks a piece into a pawn, or leaves an attacked queen standing, because the
+ * saving move was generated 20th reads as a bug, not as a strong opponent.
+ *
+ * One union of enemy attack maps per node (~3µs per army, an order of magnitude below the
+ * move generation the node already pays for) is enough to rank moves by what matters most:
+ *  - captures, most valuable victim first, discounted when the capturer then stands attacked;
+ *  - rescuing an attacked piece to a safe square;
+ *  - promotions;
+ *  - and, as a penalty, quiet moves onto attacked squares;
+ * with a small centralisation nudge to break ties among the rest.
+ */
+export function orderByThreat(pos: Position, moves: Move[]): Move[] {
+  const mover = pos.turn;
+  const attacked = new Uint8Array(NSQ);
+  for (const a of ARMIES) {
+    if (!pos.areEnemies(mover, a) || !pos.isActive(a)) continue;
+    const map = attackMap(pos, a);
+    for (let s = 0; s < NSQ; s++) attacked[s] |= map[s];
+  }
+
+  const keyed = moves.map((m, i) => {
+    const own = m.piece === 'k' ? 0 : PIECE_VALUES[m.piece];
+    const risk = attacked[m.to] === 1 ? own : 0;
+    let key: number;
+    if (m.captured !== null) {
+      const victim = m.captured === 'k' ? 20 : m.capturedPromoted ? 1 : PIECE_VALUES[m.captured];
+      // Every capture ranks above every quiet move; within captures, net expected gain.
+      key = 1000 + victim * 10 - risk * 5;
+    } else {
+      key = 0;
+      if (attacked[m.from] === 1 && attacked[m.to] === 0) key += own * 10; // escape
+      key -= risk * 8;
+      key += (centrality(m.to) - centrality(m.from)) * 3;
+    }
+    if (m.promotion !== null) key += 50;
+    return { m, key: key - i * 1e-6 };
+  });
+  keyed.sort((a, b) => b.key - a.key);
+  return keyed.map((e) => e.m);
 }
 
 /**
