@@ -108,6 +108,15 @@
   #moves .n { color: var(--muted); min-width: 20px; }
   #moves .mv { display: inline-flex; align-items: center; gap: 4px; }
   #moves .mv i { width: 6px; height: 6px; border-radius: 2px; font-style: normal; }
+  #moves .mv.live { outline: 1.5px solid var(--accent); border-radius: 4px; }
+  #moves .mv.next { outline: 1px dashed var(--muted); border-radius: 4px; }
+  #moves .mv[data-ply] { cursor: pointer; }
+  #moves .mv b { font-weight: 800; margin-left: 1px; }
+  #moves .mv b.g-inaccuracy { color: #e0b43c; }
+  #moves .mv b.g-mistake { color: #f08a3c; }
+  #moves .mv b.g-blunder { color: #ef5350; }
+  #reviewSummary, #reviewNote { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  #reviewNote:empty, #reviewSummary:empty { display: none; }
 
   /* Banner + promotion picker */
   #banner {
@@ -163,6 +172,7 @@
           <button class="primary" id="newFfa">New FFA</button>
           <button id="newTeams">New Teams</button>
           <button id="resign" title="Resign the seat on move">Resign</button>
+          <button id="hint" title="Suggest a move for the seat on move">Hint</button>
         </div>
       </div>
       <div class="panel">
@@ -193,6 +203,13 @@
       <div class="panel">
         <h3>Game</h3>
         <div id="gameState" style="font-size:13px; color: var(--muted);">Red to move</div>
+      </div>
+      <div class="panel">
+        <h3>Review</h3>
+        <button id="reviewBtn" title="Grade every move you played against the engine">
+          Review game</button>
+        <div id="reviewSummary"></div>
+        <div id="reviewNote" aria-live="polite"></div>
       </div>
     </aside>
 

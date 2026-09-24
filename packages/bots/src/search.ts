@@ -202,6 +202,24 @@ export function pickMove(pos: Position, opts: SearchOptions): SearchResult {
   };
 }
 
+/**
+ * Score one specific root move at a fixed depth, exactly as `pickMove` scores its candidates.
+ *
+ * Game review needs this: the move a human actually played is often not among the root's
+ * top-`branchCap` candidates, so its score cannot be read off `pickMove`'s `considered` list.
+ * Same depth, same leaf evaluation, same utility — so the two numbers are directly comparable.
+ */
+export function scoreRootMove(
+  pos: Position, move: Move, opts: SearchOptions,
+): { score: number; vector: Record<Army, number>; nodes: number } {
+  const mover: Army = pos.turn;
+  const ctx: Ctx = { nodes: 0, budget: opts.nodeBudget, opts };
+  const gained = makeScored(pos, move);
+  const v = maxn(pos, Math.max(0, opts.depth - 1), ctx);
+  unmakeScored(pos, gained);
+  return { score: utility(v, mover, pos), vector: v, nodes: ctx.nodes };
+}
+
 export {
   MATE_PENALTY, STALEMATE_CREDIT, makeScored, orderMoves, selectFromScored, unmakeScored,
   utility,

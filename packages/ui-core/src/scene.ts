@@ -35,6 +35,7 @@ import type { InteractionContext } from './interaction.ts';
 export type Role =
   | 'board-frame' | 'square-light' | 'square-dark'
   | 'highlight-last' | 'highlight-selected' | 'highlight-check' | 'highlight-cursor'
+  | 'highlight-hint'
   | 'legal-dot' | 'capture-ring'
   | 'piece' | 'piece-ghost' | 'coord-file' | 'coord-rank' | 'marker';
 
@@ -76,6 +77,12 @@ export interface SceneInput {
   showCoords: boolean;
   /** Armies whose king is currently in check, for the pulse overlay. */
   checked: readonly Army[];
+  /**
+   * A suggested move to mark on the board — a coaching hint, or the better alternative at a
+   * reviewed mistake. Accent-outlined rather than filled like the last move, so the two never
+   * read as the same thing when they overlap.
+   */
+  hint?: { from: number; to: number } | null;
 }
 
 export function buildScene(input: SceneInput): Scene {
@@ -123,6 +130,22 @@ export function buildScene(input: SceneInput): Scene {
       cmds.push({
         kind: 'rect', role: 'highlight-last', rect: squareRect(layout, seat, sq),
         fill: theme.highlightLast, radius: layout.radius,
+      });
+    }
+  }
+
+  // --- hint --------------------------------------------------------
+  const hint = input.hint ?? null;
+  if (hint !== null) {
+    for (const sq of [hint.from, hint.to]) {
+      const rect = squareRect(layout, seat, sq);
+      cmds.push({
+        kind: 'rect', role: 'highlight-hint', rect,
+        fill: withAlpha(theme.accent, sq === hint.to ? 0.22 : 0.12), radius: layout.radius,
+      });
+      cmds.push({
+        kind: 'outline', role: 'highlight-hint', rect,
+        stroke: theme.accent, width: Math.max(1.5, layout.square * 0.06), radius: layout.radius,
       });
     }
   }

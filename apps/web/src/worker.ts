@@ -1,43 +1,65 @@
 /**
  * Bot worker — search off the UI thread.
  *
- * The deep engine thinks for 60-300ms per move; on the main thread that is dropped frames and
- * a frozen board mid-animation. Positions travel as FEN4 (which now carries en passant rights
- * precisely so this transfer loses nothing), and the reply is a bare from/to/promotion that
- * the main thread re-validates against its own legal move list — the worker is a compute
- * servant, never an authority.
+ * Deep thinking takes up to a few seconds per move; on the main thread that is dropped frames
+ * and a frozen board mid-animation. Positions travel as FEN4 (which carries en passant rights
+ * precisely so this transfer loses nothing), and replies are bare from/to/promotion that the
+ * main thread re-validates against its own legal moves — the worker is a compute servant,
+ * never an authority.
+ *
+ * The app runs two instances: one for bot moves, one for hints and game review, so a review
+ * of a long game never delays the next bot move. Reviews are processed one move per task, so
+ * a newer request (or a cancel) can pre-empt a review between moves.
  */
 
-import { FFA_RULES, TEAMS_RULES, parseFen4 } from '@4wc/engine';
-import type { Army } from '@4wc/engine';
-import { makeBot } from '@4wc/bots';
-import type { Difficulty, PersonalityId } from '@4wc/bots';
+import { computeHint, computeMove, reviewItem } from './analysis.ts';
+import type { AnalysisReply, AnalysisRequest } from './analysis.ts';
 
-interface BotRequest {
-  id: number;
-  fen: string;
-  mode: 'ffa' | 'teams';
-  army: Army;
-  kind: PersonalityId;
-  difficulty: Difficulty;
-  seed: number;
+const post = (m: AnalysisReply): void =>
+  (self as unknown as { postMessage(m: AnalysisReply): void }).postMessage(m);
+
+/** The review in progress, if any. Replaced — never queued — by the next review or cancel. */
+let review: Extract<AnalysisRequest, { type: 'review' }> | null = null;
+let cursor = 0;
+/** Exactly one step is ever scheduled, however requests and cancels interleave. */
+let scheduled = false;
+
+function schedule(): void {
+  if (scheduled) return;
+  scheduled = true;
+  setTimeout(reviewStep, 0);
 }
 
-interface BotReply {
-  id: number;
-  army: Army;
-  move: { from: number; to: number; promotion: string | null } | null;
+function reviewStep(): void {
+  scheduled = false;
+  const r = review;
+  if (r === null) return;
+  if (cursor >= r.items.length) {
+    post({ type: 'review-done', id: r.id });
+    review = null;
+    return;
+  }
+  const item = r.items[cursor++];
+  post({ type: 'review-item', id: r.id, ply: item.ply, verdict: reviewItem(r.mode, item) });
+  schedule();
 }
 
-self.onmessage = (e: MessageEvent<BotRequest>) => {
+self.onmessage = (e: MessageEvent<AnalysisRequest>) => {
   const req = e.data;
-  const pos = parseFen4(req.fen, req.mode === 'teams' ? TEAMS_RULES : FFA_RULES);
-  const bot = makeBot(req.kind, req.difficulty, req.seed);
-  const move = bot.pick(pos, req.army);
-  const reply: BotReply = {
-    id: req.id,
-    army: req.army,
-    move: move === null ? null : { from: move.from, to: move.to, promotion: move.promotion },
-  };
-  (self as unknown as { postMessage(m: BotReply): void }).postMessage(reply);
+  switch (req.type) {
+    case 'move':
+      post(computeMove(req));
+      break;
+    case 'hint':
+      post(computeHint(req));
+      break;
+    case 'review':
+      review = req;
+      cursor = 0;
+      schedule();
+      break;
+    case 'cancel':
+      review = null;
+      break;
+  }
 };

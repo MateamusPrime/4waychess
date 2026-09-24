@@ -21,7 +21,9 @@ import {
 import type {
   AnimState, Camera, InteractionContext, InteractionState, ReplayState, Step, UserSettings,
 } from '@4wc/ui-core';
-import { atEnd, atStart, loadReplay, seek, step as replayStep, toEnd, toStart } from '@4wc/ui-core';
+import {
+  atEnd, atStart, forEachPly, loadReplay, seek, step as replayStep, toEnd, toStart,
+} from '@4wc/ui-core';
 import { Canvas2DSurface, renderScene } from '@4wc/board-render';
 import { PIECE_FILL_RULE, PIECE_PATHS, PIECE_VIEWBOX } from '@4wc/pieces';
 import { PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign } from '@4wc/bots';
@@ -29,6 +31,8 @@ import type { Bot, Difficulty, PersonalityId } from '@4wc/bots';
 import { localPersistence, storageKV } from '@4wc/store';
 import type { GameRecord, Profile, SeatRecord } from '@4wc/store';
 import { GameAudio } from './audio.ts';
+import { budgetFor, computeHint, reviewItem } from './analysis.ts';
+import type { AnalysisReply, AnalysisRequest, WireMove, WireVerdict } from './analysis.ts';
 
 /* ------------------------------------------------------------------ *
  * State
@@ -97,33 +101,221 @@ let botTimer: number | null = null;
 let seatSeeds: Record<Army, number> = { red: 1, blue: 2, yellow: 3, green: 4 };
 
 /**
- * Bot search runs in a worker so 60-300ms of deep thinking never freezes an animation. The
+ * Bot search runs in a worker so seconds of deep thinking never freeze an animation. The
  * worker is compute only: it receives FEN4 and returns from/to/promotion, which the main
- * thread re-validates against its own legal moves. Falls back to synchronous in-thread search
- * when workers are unavailable (file:// contexts, some test harnesses).
+ * thread re-validates against its own legal moves. Falls back to in-thread search when
+ * workers are unavailable (file:// contexts, some test harnesses).
+ *
+ * A second instance handles hints and game review, so reviewing a long game never delays
+ * the next bot move. It is created on first use: most sessions never ask for either.
  */
 let botWorker: Worker | null = null;
 let botRequestId = 0;
 try {
   botWorker = new Worker('dist/worker.js');
-  botWorker.onmessage = (e: MessageEvent<{
-    id: number; army: Army; move: { from: number; to: number; promotion: string | null } | null;
-  }>) => {
-    const msg = e.data;
-    if (msg.id !== botRequestId) return; // stale reply from a superseded game or turn
-    if (game.result().over || game.pos.turn !== msg.army) return;
-    if (msg.move === null) return;
-    const legal = game.legalMoves().find(
-      (m) => m.from === msg.move!.from && m.to === msg.move!.to
-        && m.promotion === msg.move!.promotion,
-    );
-    if (legal !== undefined) playMove(legal);
-  };
+  botWorker.onmessage = (e: MessageEvent<AnalysisReply>) => onReply(e.data);
   botWorker.onerror = () => {
     botWorker = null; // sync fallback from here on
   };
 } catch {
   botWorker = null;
+}
+
+let coachWorker: Worker | null | undefined; // undefined = not created yet
+function coach(): Worker | null {
+  if (coachWorker !== undefined) return coachWorker;
+  try {
+    coachWorker = new Worker('dist/worker.js');
+    coachWorker.onmessage = (e: MessageEvent<AnalysisReply>) => onReply(e.data);
+    coachWorker.onerror = () => {
+      // A pending hint would otherwise never answer; later requests compute in-thread.
+      coachWorker = null;
+      hintPending = false;
+      syncChrome();
+    };
+  } catch {
+    coachWorker = null;
+  }
+  return coachWorker;
+}
+
+/** Send a coaching request to the coach worker, or compute it in-thread without one. */
+function sendCoach(req: AnalysisRequest): void {
+  const w = coach();
+  if (w !== null) {
+    w.postMessage(req);
+    return;
+  }
+  if (req.type === 'hint') window.setTimeout(() => onReply(computeHint(req)), 0);
+  else if (req.type === 'review') reviewInThread(req);
+}
+
+/**
+ * The worker-less review path: one move per task, like the worker, so the page stays
+ * responsive and a newer review (or closing the replay) stops the old one between moves.
+ */
+function reviewInThread(req: Extract<AnalysisRequest, { type: 'review' }>): void {
+  let i = 0;
+  const step = (): void => {
+    if (review === null || review.id !== req.id) return;
+    if (i >= req.items.length) {
+      onReply({ type: 'review-done', id: req.id });
+      return;
+    }
+    const item = req.items[i++];
+    onReply({
+      type: 'review-item', id: req.id, ply: item.ply, verdict: reviewItem(req.mode, item),
+    });
+    window.setTimeout(step, 0);
+  };
+  window.setTimeout(step, 0);
+}
+
+function onReply(msg: AnalysisReply): void {
+  switch (msg.type) {
+    case 'move': {
+      if (msg.id !== botRequestId) return; // stale reply from a superseded game or turn
+      if (game.result().over || game.pos.turn !== msg.army || msg.move === null) return;
+      const legal = findLegal(msg.move);
+      if (legal !== undefined) playMove(legal);
+      return;
+    }
+    case 'hint':
+      onHint(msg);
+      return;
+    case 'review-item':
+      if (review === null || msg.id !== review.id) return;
+      if (msg.verdict !== null) review.verdicts.set(msg.ply, msg.verdict);
+      review.progress++;
+      syncChrome();
+      return;
+    case 'review-done':
+      if (review === null || msg.id !== review.id) return;
+      review.done = true;
+      banner(`Review complete — ${reviewSummary(review)}`, 3200);
+      announce(`Review complete. ${reviewSummary(review)}.`);
+      syncChrome();
+      return;
+  }
+}
+
+const findLegal = (m: WireMove): Move | undefined => game.legalMoves().find(
+  (x) => x.from === m.from && x.to === m.to && x.promotion === m.promotion,
+);
+
+/* ------------------------------------------------------------------ *
+ * Coaching: hints and game review
+ * ------------------------------------------------------------------ */
+
+/** The suggested move currently marked on the live board. Cleared by any move. */
+let hint: { from: number; to: number } | null = null;
+let hintRequestId = 0;
+let hintPending = false;
+/** The position a pending hint was asked for — a reply for any other position is dropped. */
+let hintFen = '';
+
+function requestHint(): void {
+  if (replay !== null || game.result().over || !isHuman(game.pos.turn) || hintPending) return;
+  hintPending = true;
+  hintRequestId++;
+  hintFen = serializeFen4(game.pos);
+  sendCoach({ type: 'hint', id: hintRequestId, fen: hintFen, mode: game.rules.mode });
+  syncChrome();
+}
+
+function onHint(msg: Extract<AnalysisReply, { type: 'hint' }>): void {
+  if (msg.id !== hintRequestId) return;
+  hintPending = false;
+  if (replay === null && msg.move !== null && serializeFen4(game.pos) === hintFen) {
+    const legal = findLegal(msg.move);
+    if (legal !== undefined) {
+      hint = { from: legal.from, to: legal.to };
+      banner(`Hint: ${msg.text ?? ''}`);
+      announce(`Hint: ${describeMove(game.pos, legal)}.`);
+    }
+  }
+  syncChrome();
+}
+
+/**
+ * Game review: every move a human played, graded against the engine's best at a fixed depth.
+ * Always runs on a replay — a just-finished live game is opened as one — so stepping through
+ * the verdicts, and the better move marked on the board, work the same for any stored game.
+ */
+interface ReviewState {
+  id: number;
+  total: number;
+  progress: number;
+  verdicts: Map<number, WireVerdict>;
+  done: boolean;
+}
+let review: ReviewState | null = null;
+let reviewRequestId = 0;
+/** Human seats of the game in replay — the moves a review grades. */
+let replaySeats: Army[] = [];
+
+const GRADE_MARK: Record<WireVerdict['grade'], string> = {
+  best: '', good: '', inaccuracy: '?!', mistake: '?', blunder: '??',
+};
+/** Inaccuracies, mistakes and blunders — the verdicts worth showing a better move for. */
+const isError = (v: WireVerdict | undefined): boolean =>
+  v !== undefined && (v.grade === 'inaccuracy' || v.grade === 'mistake' || v.grade === 'blunder');
+
+function reviewSummary(r: ReviewState): string {
+  const n = { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
+  for (const v of r.verdicts.values()) n[v.grade]++;
+  const plural = (k: number, one: string, many: string): string => `${k} ${k === 1 ? one : many}`;
+  return [
+    `${n.best} best`, `${n.good} good`,
+    plural(n.inaccuracy, 'inaccuracy', 'inaccuracies'),
+    plural(n.mistake, 'mistake', 'mistakes'),
+    plural(n.blunder, 'blunder', 'blunders'),
+  ].join(' · ');
+}
+
+function cancelReview(): void {
+  if (review !== null && coachWorker) coachWorker.postMessage({ type: 'cancel' });
+  review = null;
+}
+
+function startReview(): void {
+  if (replay === null) {
+    // A finished live game: open it as a replay first, from the human's seat.
+    if (!game.result().over || humanSeats().length === 0) return;
+    const r = game.result();
+    const label = r.winners.length === 0 ? 'Draw' : `${r.winners.map(cap).join(' & ')} won`;
+    const title = `This game — ${label} — ${r.reason}`;
+    enterReplay(loadReplay(writePgn4(game)), humanSeats(), title);
+  }
+  const r = replay!;
+  if (replaySeats.length === 0) {
+    banner('No human moves to review');
+    return;
+  }
+  const items: { ply: number; fen: string; move: WireMove }[] = [];
+  forEachPly(r, (ply, before, m) => {
+    if (!replaySeats.includes(before.turn)) return;
+    items.push({
+      ply, fen: serializeFen4(before), move: { from: m.from, to: m.to, promotion: m.promotion },
+    });
+  });
+  cancelReview();
+  reviewRequestId++;
+  review = {
+    id: reviewRequestId, total: items.length, progress: 0, verdicts: new Map(), done: false,
+  };
+  sendCoach({ type: 'review', id: reviewRequestId, mode: r.rules.mode, items });
+  announce(`Reviewing ${items.length} moves.`);
+  syncChrome();
+}
+
+/**
+ * In a reviewed replay, the verdict on the move about to be played from the shown position.
+ * The board shows the position BEFORE a mistake, so the better move can be marked on it.
+ */
+function upcomingVerdict(): WireVerdict | undefined {
+  if (replay === null || review === null) return undefined;
+  return review.verdicts.get(replay.ply);
 }
 
 function isHuman(a: Army): boolean {
@@ -134,12 +326,15 @@ function humanSeats(): Army[] {
 }
 function rebuildBots(): void {
   bots = {};
+  // These bots only move in the worker-less fallback (and the e2e hook); the worker sizes its
+  // own budget. Calibrating here only when it will be used keeps boot free of a benchmark.
+  const nodeBudget = botWorker === null ? budgetFor(botDifficulty) : undefined;
   for (const a of ARMIES) {
     const kind = seatConfig[a];
     if (kind !== 'human') {
       const seed = (Date.now() ^ (ARMIES.indexOf(a) * 7919)) >>> 0;
       seatSeeds[a] = seed;
-      bots[a] = makeBot(kind, botDifficulty, seed);
+      bots[a] = makeBot(kind, botDifficulty, seed, { nodeBudget });
     }
   }
 }
@@ -214,8 +409,16 @@ function frame(now: number): void {
     colorblind: settings.colorblind,
     showCoords: settings.showCoords,
     checked: replay === null ? checked : [],
+    hint: boardHint(),
   });
   renderScene(surface, scene, viewport(), { markers: settings.colorblind });
+}
+
+/** Live game: the requested hint. Reviewed replay: the better move at an upcoming mistake. */
+function boardHint(): { from: number; to: number } | null {
+  if (replay === null) return hint;
+  const v = upcomingVerdict();
+  return v !== undefined && isError(v) ? { from: v.best.from, to: v.best.to } : null;
 }
 
 /** The self-scheduling loop is separate from frame() so debug calls never fork extra loops. */
@@ -253,6 +456,7 @@ function playMove(move: Move): void {
 
   const events = game.play(move);
   moveTexts.push({ army: mover, text });
+  hint = null;
 
   if (!settings.reducedMotion) anims = add(anims, moveAnimFor(move, mover, now));
   audio.play(move.captured !== null ? 'capture' : 'move');
@@ -373,6 +577,7 @@ function scheduleBot(): void {
     if (botWorker !== null && kind !== 'human') {
       botRequestId++;
       botWorker.postMessage({
+        type: 'move',
         id: botRequestId,
         fen: serializeFen4(game.pos),
         mode: game.rules.mode,
@@ -381,7 +586,7 @@ function scheduleBot(): void {
         difficulty: botDifficulty,
         // Vary per move so softmax variance is real; stay deterministic per (game, ply).
         seed: (seatSeeds[turn] ^ Math.imul(game.moves.length + 1, 2654435761)) >>> 0,
-      });
+      } satisfies AnalysisRequest);
       return;
     }
     const move = bot.pick(game.pos, turn);
@@ -394,6 +599,14 @@ function newGame(rules: Ruleset): void {
     window.clearTimeout(botTimer);
     botTimer = null;
   }
+  // Reviewing a finished game opens it as a replay; starting a new one must leave it.
+  if (replay !== null) {
+    stopAutoplay();
+    cancelReview();
+    replay = null;
+    replayTitle = '';
+    replaySeats = [];
+  }
   game = Game.create(rules);
   gameStartedAtMs = Date.now();
   gameSaved = false;
@@ -401,6 +614,8 @@ function newGame(rules: Ruleset): void {
   anims = NO_ANIMS;
   checked = [];
   moveTexts.length = 0;
+  hint = null;
+  hintPending = false;
   camera = { zoom: 1, panX: 0, panY: 0 };
   rebuildBots();
   // Seat the first human at the bottom; an all-bot table is watched from Red's side.
@@ -465,38 +680,49 @@ function saveFinishedGame(): void {
  * Replay
  * ------------------------------------------------------------------ */
 
-/** Open a stored game on the board. Cancels any pending bot turn from the live game. */
+/** Show a replay on the board. Cancels any pending bot turn and any earlier review. */
+function enterReplay(state: ReplayState, seats: Army[], title: string): void {
+  if (botTimer !== null) {
+    window.clearTimeout(botTimer);
+    botTimer = null;
+  }
+  stopAutoplay();
+  cancelReview();
+  replay = state;
+  replaySeats = seats;
+  // View the replay from the seat the human actually occupied, so it reads the way it was
+  // played rather than always from Red's chair.
+  seat = seats[0] ?? 'red';
+  replayTitle = title;
+  camera = { zoom: 1, panX: 0, panY: 0 };
+  anims = NO_ANIMS;
+  syncChrome();
+  announce(`Replaying ${title}. ${state.moves.length} moves.`);
+}
+
+/** Open a stored game on the board. */
 function openReplay(id: string): void {
   void persistence.games.get(id).then((rec) => {
     if (rec === null) return;
-    if (botTimer !== null) {
-      window.clearTimeout(botTimer);
-      botTimer = null;
-    }
-    stopAutoplay();
+    let state: ReplayState;
     try {
-      replay = loadReplay(rec.pgn4);
+      state = loadReplay(rec.pgn4);
     } catch {
       banner('That game could not be replayed');
       return;
     }
-    // View the replay from the seat the human actually occupied, so it reads the way it was
-    // played rather than always from Red's chair.
-    const mine = rec.seats.find((s) => s.profileId !== null);
-    seat = mine?.army ?? 'red';
     const label = rec.winners.length === 0 ? 'Draw' : `${rec.winners.map(cap).join(' & ')} won`;
-    replayTitle = `${rec.mode.toUpperCase()} — ${label} — ${rec.endReason}`;
-    camera = { zoom: 1, panX: 0, panY: 0 };
-    anims = NO_ANIMS;
-    syncChrome();
-    announce(`Replaying a stored game. ${label}. ${replay.moves.length} moves.`);
+    const seats = rec.seats.filter((s) => s.profileId !== null).map((s) => s.army);
+    enterReplay(state, seats, `${rec.mode.toUpperCase()} — ${label} — ${rec.endReason}`);
   });
 }
 
 function closeReplay(): void {
   stopAutoplay();
+  cancelReview();
   replay = null;
   replayTitle = '';
+  replaySeats = [];
   seat = humanSeats()[0] ?? 'red';
   syncChrome();
   scheduleBot();
@@ -828,17 +1054,25 @@ function syncChrome(): void {
   for (const [roundIndex, round] of rounds.entries()) {
     const cells = round.map((m) => {
       const color = theme().armies[m.army];
-      const current2 = replay !== null && plyCursor === replay.ply - 1;
-      plyCursor++;
-      return `<span class="mv${current2 ? ' live' : ''}"`
-        + `${current2 ? ' style="outline:1.5px solid var(--accent);border-radius:4px"' : ''}`
-        + ` title="${m.army}">`
-        + `<i style="background:${color}"></i>${m.text}</span>`;
+      const ply = plyCursor++;
+      const current2 = replay !== null && ply === replay.ply - 1;
+      const next = replay !== null && ply === replay.ply;
+      // Review verdicts: a chess-style mark on errors, the better move in the tooltip.
+      const v = review?.verdicts.get(ply);
+      const mark = v !== undefined && GRADE_MARK[v.grade] !== ''
+        ? `<b class="g-${v.grade}">${GRADE_MARK[v.grade]}</b>` : '';
+      const title = v === undefined ? m.army
+        : isError(v) ? `${cap(v.grade)} (−${v.loss.toFixed(1)}) — better: ${v.bestText}`
+          : cap(v.grade);
+      return `<span class="mv${current2 ? ' live' : ''}${next ? ' next' : ''}"`
+        + `${replay !== null ? ` data-ply="${ply}" role="button" tabindex="0"` : ''}`
+        + ` title="${title}">`
+        + `<i style="background:${color}"></i>${m.text}${mark}</span>`;
     });
     rows.push(`<div class="mrow"><span class="n">${roundIndex + 1}.</span>${cells.join(' ')}</div>`);
   }
   el('moves').innerHTML = rows.join('');
-  el('moves').scrollTop = el('moves').scrollHeight;
+  if (replay === null) el('moves').scrollTop = el('moves').scrollHeight;
 
   // Game state line.
   const r = game.result();
@@ -852,6 +1086,12 @@ function syncChrome(): void {
   if (resignBtn !== null) {
     resignBtn.disabled = replay !== null || r.over || !isHuman(game.pos.turn);
   }
+  const hintBtn = document.getElementById('hint') as HTMLButtonElement | null;
+  if (hintBtn !== null) {
+    hintBtn.disabled = replay !== null || r.over || !isHuman(game.pos.turn) || hintPending;
+    hintBtn.textContent = hintPending ? 'Thinking…' : 'Hint';
+  }
+  syncReview();
 
   // Replay bar.
   const bar = document.getElementById('replayBar');
@@ -867,6 +1107,44 @@ function syncChrome(): void {
       (el('rPlay') as HTMLButtonElement).disabled = atEnd(replay);
       el('gameState').textContent = `Replay — ${replayTitle}`;
     }
+  }
+}
+
+/** The Review panel: the button, progress and summary, and the note on the upcoming move. */
+function syncReview(): void {
+  const btn = document.getElementById('reviewBtn') as HTMLButtonElement | null;
+  if (btn === null) return;
+  const reviewable = replay !== null
+    ? replaySeats.length > 0
+    : game.result().over && humanSeats().length > 0;
+  const running = review !== null && !review.done;
+  btn.disabled = !reviewable || running || (review !== null && review.done);
+  btn.textContent = running ? `Reviewing… ${review!.progress}/${review!.total}`
+    : review !== null ? 'Reviewed' : 'Review game';
+
+  let summary = '';
+  if (review !== null && review.progress > 0) summary = reviewSummary(review);
+  else if (!reviewable) {
+    summary = replay === null && !game.result().over
+      ? 'Finish a game to review your moves.'
+      : 'This game has no human moves to review.';
+  }
+  el('reviewSummary').textContent = summary;
+
+  // In a reviewed replay: what the upcoming move was, and what was better (marked on board).
+  const v = upcomingVerdict();
+  const note = el('reviewNote');
+  if (replay !== null && v !== undefined) {
+    const played = replay.notation[replay.ply];
+    const who = cap(replay.movers[replay.ply]);
+    note.textContent = isError(v)
+      ? `${who} played ${played}${GRADE_MARK[v.grade]} — ${v.grade}, −${v.loss.toFixed(1)}. `
+        + `Better: ${v.bestText} (marked on the board).`
+      : `${who} played ${played} — ${v.grade}.`;
+  } else if (review !== null && review.done) {
+    note.textContent = 'Click a marked move to see the position before it and the better move.';
+  } else {
+    note.textContent = '';
   }
 }
 
@@ -951,6 +1229,26 @@ function buildChrome(): void {
     else scheduleBot();
   });
 
+  el('hint').addEventListener('click', requestHint);
+  el('reviewBtn').addEventListener('click', startReview);
+
+  // Replay: clicking a move shows the position just BEFORE it — where a reviewed mistake's
+  // better alternative is marked on the board.
+  const seekToMove = (target: EventTarget | null): void => {
+    const cell = (target as HTMLElement | null)?.closest<HTMLElement>('.mv[data-ply]');
+    if (cell === null || cell === undefined || replay === null) return;
+    stopAutoplay();
+    const ply = Number(cell.dataset.ply);
+    replaySeek((r) => seek(r, ply));
+  };
+  el('moves').addEventListener('click', (e) => seekToMove(e.target));
+  el('moves').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      seekToMove(e.target);
+    }
+  });
+
   // Replay controls.
   el('rClose').addEventListener('click', closeReplay);
   el('rStart').addEventListener('click', () => replaySeek(toStart));
@@ -1026,7 +1324,28 @@ requestAnimationFrame(loop);
     over: game.result().over,
     moves: moveTexts.length,
     zoom: camera.zoom,
+    hint: hint === null ? null : `${squareName(hint.from)}-${squareName(hint.to)}`,
+    replayPly: replay?.ply ?? null,
+    review: review === null ? null : {
+      progress: review.progress, total: review.total, done: review.done,
+      grades: [...review.verdicts.entries()]
+        .map(([ply, v]) => ({ ply, grade: v.grade, best: v.bestText })),
+    },
   }),
+  requestHint,
+  startReview,
+  /** Legal moves for the side to move, as "from-to" square names. */
+  legal: () => game.legalMoves().map((m) => `${squareName(m.from)}-${squareName(m.to)}`),
+  /** Play a legal move by square names (first match; promotions take the engine's first). */
+  play: (from: string, to: string) => {
+    const m = game.legalMoves().find(
+      (x) => squareName(x.from) === from && squareName(x.to) === to,
+    );
+    if (m === undefined) return false;
+    playMove(m);
+    frame(performance.now());
+    return true;
+  },
   tap: (x: number, y: number) => {
     const sq = hitTest(layout(), seat, x, y);
     applyStep(tapSquare(ictx(), interaction, sq));

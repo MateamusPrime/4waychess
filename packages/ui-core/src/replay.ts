@@ -14,7 +14,7 @@
  */
 
 import { FFA_RULES, Game, TEAMS_RULES, formatMove, parseFen4, readPgn4 } from '@4wc/engine';
-import type { Army, Move, Position, Ruleset } from '@4wc/engine';
+import type { Army, Move, Position, Retirement, Ruleset } from '@4wc/engine';
 
 export interface ReplayState {
   /** Every move of the finished game. */
@@ -34,11 +34,45 @@ export interface ReplayState {
   /** Retained so any ply can be rebuilt from scratch. */
   startFen: string;
   rules: Ruleset;
+  /**
+   * Resignations and timeouts. They are not moves, so replaying the movetext alone keeps the
+   * retired army in the turn order: from its next skipped seat every mover label and every
+   * rebuilt position was wrong. `readPgn4` already applied them; the replay must too.
+   */
+  retirements: Retirement[];
 }
 
 /** A game at the recorded start position under the recorded ruleset, with no moves played. */
 function freshGame(startFen: string, rules: Ruleset): Game {
   return new Game(parseFen4(startFen, rules), startFen);
+}
+
+/** Apply every retirement recorded as taking effect after `game.moves.length` moves. */
+function applyRetirements(game: Game, retirements: readonly Retirement[]): void {
+  for (const r of retirements) {
+    if (r.atPly !== game.moves.length) continue;
+    if (!game.pos.isActive(r.army) || game.result().over) continue;
+    if (r.status === 'timeout') game.timeout(r.army);
+    else game.resign(r.army);
+  }
+}
+
+/**
+ * Walk the game once from the start, calling `visit` with each ply's index and the position
+ * the move is played FROM — retirements applied, exactly as the game was played. Analysis
+ * (game review) needs every pre-move position; seeking to each ply would be quadratic.
+ */
+export function forEachPly(
+  state: Pick<ReplayState, 'moves' | 'startFen' | 'rules' | 'retirements'>,
+  visit: (ply: number, before: Position, move: Move) => void,
+): void {
+  const game = freshGame(state.startFen, state.rules);
+  applyRetirements(game, state.retirements);
+  for (const [ply, m] of state.moves.entries()) {
+    visit(ply, game.pos, m);
+    game.play(m);
+    applyRetirements(game, state.retirements);
+  }
 }
 
 /**
@@ -52,15 +86,14 @@ export function loadReplay(pgn4: string, ply = 0): ReplayState {
   const rules: Ruleset = tags.Mode === 'teams' ? TEAMS_RULES : FFA_RULES;
   const startFen = game.startingFen;
   const moves = [...game.moves];
+  const retirements = [...game.retirements];
 
   const notation: string[] = [];
   const movers: Army[] = [];
-  const walker = freshGame(startFen, rules);
-  for (const m of moves) {
-    movers.push(walker.pos.turn);
-    notation.push(formatMove(walker.pos, m));
-    walker.play(m);
-  }
+  forEachPly({ moves, startFen, rules, retirements }, (_ply, before, m) => {
+    movers.push(before.turn);
+    notation.push(formatMove(before, m));
+  });
 
   const base: ReplayState = {
     moves,
@@ -72,6 +105,7 @@ export function loadReplay(pgn4: string, ply = 0): ReplayState {
     movers,
     startFen,
     rules,
+    retirements,
   };
   return seek(base, ply);
 }
@@ -80,7 +114,11 @@ export function loadReplay(pgn4: string, ply = 0): ReplayState {
 export function seek(state: ReplayState, ply: number): ReplayState {
   const target = Math.max(0, Math.min(state.moves.length, Math.floor(ply)));
   const game = freshGame(state.startFen, state.rules);
-  for (let i = 0; i < target; i++) game.play(state.moves[i]);
+  applyRetirements(game, state.retirements);
+  for (let i = 0; i < target; i++) {
+    game.play(state.moves[i]);
+    applyRetirements(game, state.retirements);
+  }
 
   return {
     ...state,
