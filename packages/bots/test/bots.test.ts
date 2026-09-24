@@ -352,34 +352,38 @@ describe('personalities', () => {
     assert.equal(DIFFICULTIES.hard.temperature, 0);
   });
 
-  test('Expert is defined by depth: its budget always completes depth 5', () => {
-    // Expert has no time cap (apps/web sizes only Hard to the device), so its node budget must
-    // cover a full depth-5 search in ANY position. With branch cap b the iterations cost at most
-    // sum over d<=5 of sum over k<=d of b^k nodes, plus one static eval per root legal move —
-    // independent of the position, which is what makes a fixed depth affordable on every device.
-    const e = DIFFICULTIES.expert;
-    let worst = 0;
-    for (let d = 1; d <= e.depth; d++) {
-      for (let k = 1; k <= d; k++) worst += e.branchCap ** k;
-    }
-    worst += 200; // root ranking: one eval per legal move, far above any real move count
-    assert.ok(worst <= e.nodeBudget, `worst case ${worst} must fit the ${e.nodeBudget} budget`);
-
-    for (let seed = 1; seed <= 4; seed++) {
-      const pos = startingPosition();
-      const rnd = makeRng(seed);
-      for (let i = 0; i < 12 + seed * 9; i++) {
-        const ms = generateLegal(pos, pos.turn);
-        if (ms.length === 0) break;
-        pos.makeMove(ms[Math.floor(rnd() * ms.length)]);
+  for (const tier of ['hard', 'expert'] as const) {
+    test(`${tier} is defined by depth: its budget always completes its depth`, () => {
+      // No tier has a time cap (apps/web never resizes budgets), so each iterative tier's node
+      // budget must cover a full search to its depth in ANY position. With branch cap b the
+      // iterations cost at most sum over d<=depth of sum over k<=d of b^k nodes, plus one
+      // static eval per root legal move — independent of the position, which is what makes a
+      // fixed depth affordable on every device.
+      const e = DIFFICULTIES[tier];
+      assert.equal(e.iterative, true);
+      let worst = 0;
+      for (let d = 1; d <= e.depth; d++) {
+        for (let k = 1; k <= d; k++) worst += e.branchCap ** k;
       }
-      const r = pickMove(pos, opts({
-        depth: e.depth, nodeBudget: e.nodeBudget, branchCap: e.branchCap, iterative: true,
-      }));
-      assert.equal(r.depthReached, e.depth, `seed ${seed}: reached depth ${r.depthReached}`);
-      assert.ok(r.nodes <= worst, `seed ${seed}: ${r.nodes} nodes`);
-    }
-  });
+      worst += 200; // root ranking: one eval per legal move, far above any real move count
+      assert.ok(worst <= e.nodeBudget, `worst case ${worst} must fit the ${e.nodeBudget} budget`);
+
+      for (let seed = 1; seed <= 4; seed++) {
+        const pos = startingPosition();
+        const rnd = makeRng(seed);
+        for (let i = 0; i < 12 + seed * 9; i++) {
+          const ms = generateLegal(pos, pos.turn);
+          if (ms.length === 0) break;
+          pos.makeMove(ms[Math.floor(rnd() * ms.length)]);
+        }
+        const r = pickMove(pos, opts({
+          depth: e.depth, nodeBudget: e.nodeBudget, branchCap: e.branchCap, iterative: true,
+        }));
+        assert.equal(r.depthReached, e.depth, `seed ${seed}: reached depth ${r.depthReached}`);
+        assert.ok(r.nodes <= worst, `seed ${seed}: ${r.nodes} nodes`);
+      }
+    });
+  }
 
   test('a bot picks legal moves for its own seat and refuses to move out of turn', () => {
     const bot = makeBot('aggressive', 'medium', 123);
