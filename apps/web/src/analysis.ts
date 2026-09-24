@@ -54,17 +54,19 @@ function position(fen: string, mode: 'ffa' | 'teams'): Position {
  * ------------------------------------------------------------------ */
 
 /**
- * How long each tier should think, in milliseconds.
+ * How long a tier may think, in milliseconds, for tiers that trade depth for speed.
  *
- * Node budgets alone made thinking time scale with the device: Expert's 120k nodes are ~1.4s
- * on a desktop core and several seconds on a phone. The bots package has no clock (its purity
- * test forbids one), so the host measures its own speed once and converts a time target into
- * nodes. Ceilings stay at the arena-validated budgets, so a fast machine never searches more
- * than what was measured; floors keep a slow device at a useful depth rather than degrading
- * the tier into a different, weaker bot.
+ * Node budgets alone make thinking time scale with the device. The bots package has no clock
+ * (its purity test forbids one), so the host measures its own speed once and converts a time
+ * target into nodes. Ceilings stay at the arena-validated budgets, so a fast machine never
+ * searches more than what was measured; floors keep a slow device at a useful depth.
+ *
+ * Expert is deliberately absent: it is defined by DEPTH, not time. Its tier budget always
+ * completes depth 5 (at branch cap 8 a depth-5 search needs ~43k nodes in any position), so it
+ * plays identically on every device — a slow phone simply waits longer for the same move.
  */
-export const THINK_MS: Partial<Record<Difficulty, number>> = { hard: 800, expert: 2500 };
-const FLOOR: Partial<Record<Difficulty, number>> = { hard: 3_000, expert: 8_000 };
+export const THINK_MS: Partial<Record<Difficulty, number>> = { hard: 800 };
+const FLOOR: Partial<Record<Difficulty, number>> = { hard: 3_000 };
 const HINT_MS = 800;
 
 let measured: number | null = null;
@@ -91,7 +93,7 @@ const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.m
 /** The node budget for a tier on this device, or undefined to keep the tier's own budget. */
 export function budgetFor(difficulty: Difficulty): number | undefined {
   const ms = THINK_MS[difficulty];
-  if (ms === undefined) return undefined; // easy/medium: fixed shallow depth, already fast
+  if (ms === undefined) return undefined; // easy/medium/expert: the tier's own depth budget
   return Math.round(clamp(nodesPerMs() * ms, FLOOR[difficulty] ?? 0,
     DIFFICULTIES[difficulty].nodeBudget));
 }
