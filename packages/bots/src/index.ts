@@ -10,7 +10,7 @@ export type { EvalWeights, WeightsByArmy } from './eval.ts';
 export { DEFAULT_WEIGHTS, evaluate, uniformWeights } from './eval.ts';
 
 export type { SearchOptions, SearchResult } from './search.ts';
-export { pickMove } from './search.ts';
+export { pickMove, scoreRootMove } from './search.ts';
 export { selectFromScored, utility } from './core.ts';
 export { captureRollout } from './rollout.ts';
 export type { DeepOptions, DeepResult } from './deep.ts';
@@ -21,3 +21,6 @@ export { DIFFICULTIES, PERSONALITIES, PERSONALITY_IDS, makeBot, wantsResign } fr
 
 export type { Rng } from './rng.ts';
 export { makeRng } from './rng.ts';
+
+export type { Grade, Verdict } from './review.ts';
+export { GRADE_THRESHOLDS, REVIEW_SEARCH, gradeLoss, reviewMove, suggestMove } from './review.ts';

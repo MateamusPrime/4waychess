@@ -36,6 +36,7 @@ function input(over: Partial<SceneInput> = {}): SceneInput {
     colorblind: over.colorblind ?? false,
     showCoords: over.showCoords ?? true,
     checked: over.checked ?? [],
+    hint: over.hint,
   };
 }
 
@@ -202,6 +203,18 @@ describe('interaction feedback', () => {
     const move = generateLegal(pos, 'red').find((m) => squareName(m.to) === 'g4')!;
     const s = buildScene(input({ interaction: observeMove(INITIAL_INTERACTION, move) }));
     assert.equal(commandsWithRole(s, 'highlight-last').length, 2);
+  });
+
+  test('a hint marks both squares with fill and outline, drawn beneath the pieces', () => {
+    const hint = { from: parseSquare('g2'), to: parseSquare('g4') };
+    const s = buildScene(input({ hint }));
+    const cmds = commandsWithRole(s, 'highlight-hint');
+    assert.equal(cmds.filter((c) => c.kind === 'rect').length, 2);
+    assert.equal(cmds.filter((c) => c.kind === 'outline').length, 2);
+    const order = roleOrder(s);
+    assert.ok(order.indexOf('highlight-hint') < order.indexOf('piece'), 'pieces stay on top');
+    assert.equal(commandsWithRole(buildScene(input()), 'highlight-hint').length, 0);
+    assert.equal(commandsWithRole(buildScene(input({ hint: null })), 'highlight-hint').length, 0);
   });
 
   test('the keyboard cursor draws its own outline', () => {

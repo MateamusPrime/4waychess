@@ -58,5 +58,5 @@ export {
 
 export type { ReplayState } from './replay.ts';
 export {
-  atEnd, atStart, loadReplay, roundOf, seek, step, toEnd, toStart,
+  atEnd, atStart, forEachPly, loadReplay, roundOf, seek, step, toEnd, toStart,
 } from './replay.ts';

@@ -167,15 +167,24 @@ export function wantsResign(pos: Position, army: Army): boolean {
  * Build a bot for one seat.
  *
  * `weightsByArmy` gives EVERY army this bot's model of the table (opponents are assumed
- * default-weighted); its own seat uses its personality weights. Deterministic under `seed`.
+ * default-weighted); its own seat uses its personality weights. Deterministic under `seed`
+ * and `nodeBudget`.
+ *
+ * `nodeBudget` overrides the tier's budget. This package has no clock, so hosts that want a
+ * TIME budget measure their own speed and convert (apps/web sizes Hard and Expert to the
+ * device, so a phone thinks for about as long as a desktop instead of three times longer).
  */
 export function makeBot(
   personality: PersonalityId,
   difficulty: Difficulty,
   seed: number,
+  overrides: { nodeBudget?: number } = {},
 ): Bot {
   const p = PERSONALITIES[personality];
-  const params = DIFFICULTIES[difficulty];
+  const params = {
+    ...DIFFICULTIES[difficulty],
+    ...(overrides.nodeBudget !== undefined ? { nodeBudget: overrides.nodeBudget } : {}),
+  };
   const rng = makeRng(seed);
 
   return {

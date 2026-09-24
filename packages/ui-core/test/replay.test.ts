@@ -5,7 +5,7 @@ import {
 } from '@4wc/engine';
 import type { Ruleset } from '@4wc/engine';
 import {
-  atEnd, atStart, loadReplay, roundOf, seek, step, toEnd, toStart,
+  atEnd, atStart, forEachPly, loadReplay, roundOf, seek, step, toEnd, toStart,
 } from '../src/replay.ts';
 
 function playGame(plies: number, rules: Ruleset = FFA_RULES, seed = 4242): Game {
@@ -126,6 +126,63 @@ describe('replay reconstructs a finished game', () => {
     assert.equal(atStart(r), true);
     assert.equal(atEnd(r), true, 'start and end coincide');
     assert.equal(step(r, 1).ply, 0);
+  });
+});
+
+/**
+ * A game where `resigner` resigns after `at` plies and play continues without it — the shape
+ * every bot-table game has once a hopeless bot concedes.
+ */
+function gameWithResignation(rules: Ruleset, resigner: 'red' | 'blue', at: number): {
+  game: Game; fens: string[]; movers: string[];
+} {
+  let s = 777;
+  const rnd = (n: number): number => {
+    s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0;
+    return s % n;
+  };
+  const g = Game.create(rules);
+  g.startingFen = serializeFen4(g.pos);
+  const fens: string[] = [];
+  const movers: string[] = [];
+  for (let i = 0; i < 90 && !g.result().over; i++) {
+    if (g.moves.length === at && g.pos.isActive(resigner)) g.resign(resigner);
+    const ms = g.legalMoves();
+    if (ms.length === 0 || g.result().over) break;
+    fens.push(serializeFen4(g.pos));
+    movers.push(g.pos.turn);
+    g.play(ms[rnd(ms.length)]);
+  }
+  return { game: g, fens, movers };
+}
+
+describe('replay with resignations', () => {
+  for (const rules of [FFA_RULES, TEAMS_RULES]) {
+    test(`${rules.mode}: a resignation mid-game keeps movers and positions in sync`, () => {
+      // Regression: replay walked the movetext only, so a resigned army stayed in the turn
+      // order — from its next skipped seat every mover label and rebuilt position was wrong
+      // (found by game review grading other armies' moves as the human's).
+      const { game, fens, movers } = gameWithResignation(rules, 'red', 13);
+      const r = loadReplay(writePgn4(game));
+      assert.deepEqual(r.movers, movers, 'every ply attributed to the army that played it');
+      assert.equal(r.movers.slice(13).includes('red'), false, 'red never moves after resigning');
+      for (const ply of [0, 12, 13, 14, 30, r.moves.length - 1]) {
+        const before = seek(r, ply);
+        assert.equal(serializeFen4(before.position), fens[ply], `ply ${ply}`);
+      }
+      assert.equal(serializeFen4(toEnd(r).position), serializeFen4(game.pos));
+    });
+  }
+
+  test('forEachPly visits every pre-move position once, retirements applied', () => {
+    const { game, fens } = gameWithResignation(FFA_RULES, 'blue', 20);
+    const r = loadReplay(writePgn4(game));
+    const seen: string[] = [];
+    forEachPly(r, (ply, before) => {
+      assert.equal(ply, seen.length);
+      seen.push(serializeFen4(before));
+    });
+    assert.deepEqual(seen, fens);
   });
 });
 
